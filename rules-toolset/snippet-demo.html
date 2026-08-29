@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Snippet demo — in-game context help</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0e0f13; color: #dfe1e8;
+         font: 15px/1.6 system-ui, sans-serif; padding: 40px 24px; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #777; font-size: 13px; margin-bottom: 28px; }
+  .mock { background: #1a1c23; border: 1px solid #2a2c36; border-radius: 10px;
+          padding: 16px 18px; margin-bottom: 14px; }
+  .mock h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+             color: #6e7280; margin: 0 0 10px; }
+  button.act { background: #23252f; border: 1px solid #333; color: #eee;
+               padding: 7px 12px; border-radius: 6px; cursor: pointer; margin-right: 6px; }
+  button.act:hover { background: #2c2f3b; }
+  .rule-ref { color: #7aa7f0; border-bottom: 1px dotted #7aa7f0; cursor: help; }
+  #tip { position: fixed; max-width: 320px; background: #22242e; border: 1px solid #3a3d4a;
+         border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5;
+         box-shadow: 0 8px 24px rgba(0,0,0,.5); display: none; z-index: 50; }
+  #tip .t { font-weight: 600; color: #fff; margin-bottom: 4px; }
+  #tip .more { color: #7aa7f0; font-size: 12px; margin-top: 6px; display: block; }
+  #panel { position: fixed; top: 0; right: 0; width: 340px; height: 100%; background: #16181f;
+           border-left: 1px solid #2a2c36; padding: 20px; overflow-y: auto;
+           transform: translateX(100%); transition: transform .18s ease; z-index: 60; }
+  #panel.open { transform: translateX(0); }
+  #panel h3 { margin: 0 0 4px; font-size: 17px; color: #fff; }
+  #panel .close { float: right; background: none; border: none; color: #888;
+                  font-size: 20px; cursor: pointer; line-height: 1; }
+  #panel code { background: #23252f; padding: 1px 5px; border-radius: 4px;
+                font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #e6c07b; }
+  #panel a { color: #7aa7f0; }
+  #panel .rel { margin-top: 18px; font-size: 13px; color: #777; }
+  .err { background: #2a1c1c; border: 1px solid #5a2c2c; color: #f9c; padding: 12px;
+         border-radius: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>In-game context help, from the same source as the book</h1>
+  <p class="sub">Every tooltip and panel below is rendered from
+  <code>../rules/demo/build/snippets.json</code> — the same compile that
+  produced that ruleset's <code>book.html</code>. Hover a dotted term;
+  click for the full rule. (This demo is wired to the <b>demo</b> ruleset
+  specifically — a real client would fetch whichever ruleset it's
+  configured to run.)</p>
+
+  <div class="mock">
+    <h2>Mock: dice roller</h2>
+    <p>Roll <span class="rule-ref" data-rule="dice-rolls">1d20</span> to resolve an
+    <span class="rule-ref" data-rule="attacks">attack</span>.</p>
+    <button class="act" data-rule="dice-rolls">Roll</button>
+    <button class="act" data-rule="attacks">Attack</button>
+  </div>
+
+  <div class="mock">
+    <h2>Mock: token context menu</h2>
+    <p>Selected token has <span class="rule-ref" data-rule="damage-and-healing">18 / 20 HP</span>
+    and can move <span class="rule-ref" data-rule="movement">4 tiles</span>.</p>
+    <button class="act" data-rule="damage-and-healing">Adjust HP</button>
+    <button class="act" data-rule="movement">Move</button>
+    <button class="act" data-rule="turn-order">End turn</button>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<div id="tip"></div>
+<div id="panel">
+  <button class="close" id="panelClose">×</button>
+  <div id="panelBody"></div>
+</div>
+
+<script>
+let SNIPPETS = null;
+
+fetch("../rules/demo/build/snippets.json")
+  .then((r) => { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json(); })
+  .then((data) => { SNIPPETS = data; })
+  .catch((err) => {
+    document.getElementById("status").innerHTML =
+      '<div class="err"><b>Could not load snippets.json.</b><br>' +
+      'Serve this folder over HTTP (<code>python3 -m http.server</code>) — ' +
+      'fetch() is blocked on file:// URLs.<br><br>' + err + '</div>';
+  });
+
+const tip = document.getElementById("tip");
+const panel = document.getElementById("panel");
+const panelBody = document.getElementById("panelBody");
+
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-rule]");
+  if (!el || !SNIPPETS) return;
+  const s = SNIPPETS[el.dataset.rule];
+  if (!s) return;
+  // summary_html is the inline-rendered form; there's also a plain-text
+  // `summary` for places HTML isn't wanted
+  tip.innerHTML = `<div class="t">${s.title}</div>${s.summary_html}
+    <span class="more">Click for the full rule →</span>`;
+  tip.style.display = "block";
+  const r = el.getBoundingClientRect();
+  tip.style.left = Math.min(r.left, window.innerWidth - 340) + "px";
+  tip.style.top = (r.bottom + 8) + "px";
+});
+document.addEventListener("mouseout", (e) => {
+  if (e.target.closest("[data-rule]")) tip.style.display = "none";
+});
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-rule]");
+  if (!el || !SNIPPETS) return;
+  const s = SNIPPETS[el.dataset.rule];
+  if (!s) return;
+  const related = s.related.length
+    ? `<div class="rel">See also: ${s.related
+        .map((id) => `<a href="#" data-rule="${id}">${SNIPPETS[id] ? SNIPPETS[id].title : id}</a>`)
+        .join(", ")}</div>`
+    : "";
+  panelBody.innerHTML = `<h3>${s.title}</h3>${s.html}${related}
+    <div class="rel"><a href="../rules/demo/build/book.html${s.book_anchor}" target="_blank">
+    Open in the full rulebook →</a></div>`;
+  panel.classList.add("open");
+  tip.style.display = "none";
+  e.preventDefault();
+});
+
+document.getElementById("panelClose").onclick = () => panel.classList.remove("open");
+</script>
+</body>
+</html>

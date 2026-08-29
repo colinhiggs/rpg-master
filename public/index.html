@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>RPG Table — Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0e0f13; font-family: system-ui, sans-serif; color: #eee; overflow: hidden; }
+  #canvas-wrap { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* --- Login screen --- */
+  #login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0e0f13; z-index: 20; }
+  #login .card { background: #1a1c23; padding: 28px 32px; border-radius: 12px; width: 300px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  #login h1 { font-size: 18px; margin: 0 0 16px; }
+  #login label { display: block; font-size: 13px; margin: 10px 0 4px; color: #aaa; }
+  #login input[type=text] { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #0e0f13; color: #eee; }
+  #login .roles { display: flex; gap: 8px; margin-top: 4px; }
+  #login .roles button { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #0e0f13; color: #eee; cursor: pointer; }
+  #login .roles button.active { background: #4f8ef7; border-color: #4f8ef7; color: #fff; }
+  #login .go { width: 100%; margin-top: 16px; padding: 10px; border-radius: 6px; border: none; background: #4f8ef7; color: #fff; font-weight: 600; cursor: pointer; }
+
+  /* --- HUD --- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
+  .panel { position: absolute; pointer-events: auto; background: rgba(20,21,28,.88); border: 1px solid #2a2c36; border-radius: 10px; padding: 10px; backdrop-filter: blur(4px); }
+  #sidebar { top: 10px; right: 10px; width: 260px; max-height: calc(100vh - 20px); display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+  #turnbar { top: 10px; left: 10px; width: 300px; }
+  #turnbar h2, #sidebar h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #888; margin: 0 0 8px; }
+  .token-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .token-row.current { background: rgba(79,142,247,.15); border-radius: 6px; padding: 4px 6px; }
+  .hp { margin-left: auto; color: #999; font-size: 12px; }
+  #nextTurnBtn, #spawnBtn, #rollBtn, #chatSendBtn { padding: 6px 10px; border-radius: 6px; border: 1px solid #333; background: #23252f; color: #eee; cursor: pointer; }
+  #nextTurnBtn:hover, #spawnBtn:hover, #rollBtn:hover, #chatSendBtn:hover { background: #2c2f3b; }
+  #chatlog { height: 160px; overflow-y: auto; font-size: 12px; line-height: 1.5; border-top: 1px solid #2a2c36; border-bottom: 1px solid #2a2c36; padding: 6px 0; margin: 6px 0; }
+  #chatlog .who { color: #4f8ef7; font-weight: 600; }
+  #chatlog .sys { color: #888; font-style: italic; }
+  .row { display: flex; gap: 6px; }
+  .row input[type=text] { flex: 1; min-width: 0; padding: 6px; border-radius: 6px; border: 1px solid #333; background: #0e0f13; color: #eee; }
+  #spawnForm { display: none; flex-direction: column; gap: 6px; margin-top: 6px; }
+  #spawnForm.open { display: flex; }
+  #spawnForm input, #spawnForm select { padding: 6px; border-radius: 6px; border: 1px solid #333; background: #0e0f13; color: #eee; }
+  #hint { position: absolute; bottom: 10px; left: 10px; font-size: 12px; color: #888; }
+  #roleTag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #333; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="card">
+    <h1>🎲 Join the Table</h1>
+    <label for="nameInput">Your name</label>
+    <input id="nameInput" type="text" maxlength="24" placeholder="e.g. Kael" />
+    <label>Role</label>
+    <div class="roles">
+      <button id="roleplayer" class="active">Player</button>
+      <button id="roledm">Dungeon Master</button>
+    </div>
+    <button class="go" id="joinBtn" disabled>Loading assets…</button>
+  </div>
+</div>
+
+<div id="canvas-wrap"></div>
+
+<div id="hud">
+  <div class="panel" id="turnbar">
+    <h2>Initiative</h2>
+    <div id="turnList"></div>
+    <div id="dmTurnControls" style="display:none; margin-top:8px;">
+      <button id="nextTurnBtn">Next Turn ▶</button>
+    </div>
+  </div>
+
+  <div class="panel" id="sidebar">
+    <div>
+      <h2>Party <span id="roleTag"></span></h2>
+      <div id="playerList"></div>
+    </div>
+
+    <div id="dmSpawnBlock" style="display:none;">
+      <button id="spawnBtn">+ Spawn Token</button>
+      <div id="spawnForm">
+        <input id="spawnName" type="text" placeholder="Name (e.g. Goblin)" />
+        <select id="spawnKind">
+          <option value="goblin" selected>Goblin (small)</option>
+          <option value="ogre">Ogre (large)</option>
+          <option value="hero">Hero-shaped ally</option>
+        </select>
+        <input id="spawnHp" type="text" placeholder="HP (e.g. 12)" />
+        <input id="spawnColor" type="text" placeholder="Ring color (e.g. #999999)" value="#999999" />
+        <button id="spawnConfirm">Spawn</button>
+      </div>
+    </div>
+
+    <div>
+      <h2>Log</h2>
+      <div id="chatlog"></div>
+      <div class="row">
+        <input id="chatInput" type="text" placeholder="Say something…" />
+        <button id="chatSendBtn">Send</button>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <input id="diceInput" type="text" placeholder="1d20+3" value="1d20" />
+        <button id="rollBtn">Roll</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hint">Click a grid tile to move your token · drag to orbit · scroll to zoom</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+// ---------------------------------------------------------------------
+// Networking
+// ---------------------------------------------------------------------
+const socket = io();
+let selfId = null;
+let myTokenId = null;
+let myRole = "player";
+let latestState = null;
+let assetsReady = false;
+
+// ---------------------------------------------------------------------
+// Login screen
+// ---------------------------------------------------------------------
+const loginEl = document.getElementById("login");
+const hudEl = document.getElementById("hud");
+let chosenRole = "player";
+document.getElementById("roleplayer").onclick = () => setRole("player");
+document.getElementById("roledm").onclick = () => setRole("dm");
+function setRole(r) {
+  chosenRole = r;
+  document.getElementById("roleplayer").classList.toggle("active", r === "player");
+  document.getElementById("roledm").classList.toggle("active", r === "dm");
+}
+document.getElementById("joinBtn").onclick = doJoin;
+document.getElementById("nameInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && assetsReady) doJoin(); });
+function doJoin() {
+  if (!assetsReady) return;
+  const name = document.getElementById("nameInput").value.trim() || "Adventurer";
+  myRole = chosenRole;
+  socket.emit("join", { name, role: chosenRole });
+}
+socket.on("joined", ({ selfId: id, tokenId }) => {
+  selfId = id;
+  myTokenId = tokenId;
+  loginEl.style.display = "none";
+  hudEl.style.display = "block";
+  document.getElementById("roleTag").textContent = myRole === "dm" ? "DM view" : "Player view";
+  document.getElementById("dmSpawnBlock").style.display = myRole === "dm" ? "block" : "none";
+  document.getElementById("dmTurnControls").style.display = myRole === "dm" ? "block" : "none";
+});
+
+// ---------------------------------------------------------------------
+// Three.js scene
+// ---------------------------------------------------------------------
+const wrap = document.getElementById("canvas-wrap");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e0f13);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(9, 13, 16);
+camera.lookAt(7, 0, 7);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+wrap.appendChild(renderer.domElement);
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Lights — one shadow-casting directional light + ambient fill. Kept to
+// a single shadow-casting light deliberately: shadow maps are the one
+// feature here with a real performance cost if you add more of them.
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.left = -10;
+dirLight.shadow.camera.right = 10;
+dirLight.shadow.camera.top = 10;
+dirLight.shadow.camera.bottom = -10;
+dirLight.shadow.camera.updateProjectionMatrix();
+scene.add(dirLight);
+
+// ---------------------------------------------------------------------
+// Model preloading — join is disabled until these finish (see login
+// screen), so syncScene() below can always assume a template exists.
+// ---------------------------------------------------------------------
+const MODEL_URLS = {
+  hero: "./assets/models/hero.glb",
+  goblin: "./assets/models/goblin.glb",
+  ogre: "./assets/models/ogre.glb",
+};
+const gltfLoader = new THREE.GLTFLoader();
+const modelTemplates = {}; // kind -> THREE.Group, cloned per token instance
+
+function loadModel(kind, url) {
+  return new Promise((resolve, reject) => {
+    gltfLoader.load(
+      url,
+      (gltf) => {
+        gltf.scene.traverse((o) => {
+          if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+        });
+        modelTemplates[kind] = gltf.scene;
+        resolve();
+      },
+      undefined,
+      reject
+    );
+  });
+}
+
+Promise.all(Object.entries(MODEL_URLS).map(([kind, url]) => loadModel(kind, url)))
+  .then(() => {
+    assetsReady = true;
+    const btn = document.getElementById("joinBtn");
+    btn.disabled = false;
+    btn.textContent = "Enter";
+  })
+  .catch((err) => {
+    const btn = document.getElementById("joinBtn");
+    btn.textContent = "Failed to load assets — see console";
+    console.error("Model preload failed:", err);
+  });
+
+// --- Minimal orbit-style camera controls (no external OrbitControls dep) ---
+let camTarget = new THREE.Vector3(7, 0, 7);
+let camRadius = 18, camTheta = Math.PI / 4, camPhi = 0.9;
+function updateCamera() {
+  camera.position.set(
+    camTarget.x + camRadius * Math.sin(camPhi) * Math.sin(camTheta),
+    camTarget.y + camRadius * Math.cos(camPhi),
+    camTarget.z + camRadius * Math.sin(camPhi) * Math.cos(camTheta)
+  );
+  camera.lookAt(camTarget);
+}
+updateCamera();
+let dragging = false, lastX = 0, lastY = 0;
+renderer.domElement.addEventListener("mousedown", (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener("mouseup", () => (dragging = false));
+window.addEventListener("mousemove", (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  camTheta -= dx * 0.005;
+  camPhi = Math.min(1.5, Math.max(0.2, camPhi - dy * 0.005));
+  updateCamera();
+});
+renderer.domElement.addEventListener("wheel", (e) => {
+  camRadius = Math.min(40, Math.max(6, camRadius + e.deltaY * 0.01));
+  updateCamera();
+});
+
+// Grid floor
+let GRID_SIZE = 14;
+const groundTexture = new THREE.TextureLoader().load("./assets/textures/ground_checker.png");
+groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
+groundTexture.magFilter = THREE.NearestFilter;
+function buildFloor(size) {
+  const group = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(size, size);
+  const tex = groundTexture.clone();
+  tex.needsUpdate = true;
+  tex.repeat.set(size / 2, size / 2);
+  const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 });
+  const plane = new THREE.Mesh(geo, mat);
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.set(size / 2 - 0.5, -0.01, size / 2 - 0.5);
+  plane.name = "floor";
+  plane.receiveShadow = true;
+  group.add(plane);
+  const grid = new THREE.GridHelper(size, size, 0x3a3d4a, 0x2a2c36);
+  grid.position.set(size / 2 - 0.5, 0, size / 2 - 0.5);
+  group.add(grid);
+  return group;
+}
+let floorGroup = buildFloor(GRID_SIZE);
+scene.add(floorGroup);
+camTarget.set(GRID_SIZE / 2, 0, GRID_SIZE / 2);
+updateCamera();
+
+// Raycasting for tile clicks
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+renderer.domElement.addEventListener("click", (e) => {
+  if (dragMoved) { dragMoved = false; return; }
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const floor = scene.getObjectByName("floor");
+  if (!floor) return;
+  const hits = raycaster.intersectObject(floor);
+  if (hits.length === 0) return;
+  const p = hits[0].point;
+  const gx = Math.round(p.x);
+  const gy = Math.round(p.z);
+  onTileClick(gx, gy);
+});
+let dragMoved = false;
+renderer.domElement.addEventListener("mousemove", () => { if (dragging) dragMoved = true; });
+
+function onTileClick(gx, gy) {
+  if (!latestState) return;
+  if (myRole === "dm" && selectedTokenId) {
+    socket.emit("moveToken", { tokenId: selectedTokenId, x: gx, y: gy });
+  } else if (myTokenId) {
+    socket.emit("moveToken", { tokenId: myTokenId, x: gx, y: gy });
+  }
+}
+
+// Token entries: tokenId -> { group, pivots, ring, displayPos, targetPos, phase }
+const tokenMeshes = {};
+let selectedTokenId = null; // DM can select an npc/monster to move it
+
+const PIVOT_SUFFIXES = ["LeftLegPivot", "RightLegPivot", "LeftArmPivot", "RightArmPivot", "Head"];
+
+function createTokenEntry(token) {
+  const template = modelTemplates[token.kind] || modelTemplates.hero;
+  // No skinning in these rigs, so a plain clone() is enough — a rigged/
+  // skinned model (e.g. from Mixamo) would need THREE.SkeletonUtils.clone()
+  // instead, since a regular clone breaks the skeleton binding.
+  const model = template.clone(true);
+
+  const pivots = {};
+  model.traverse((o) => {
+    for (const suffix of PIVOT_SUFFIXES) {
+      if (o.name && o.name.endsWith(suffix)) pivots[suffix] = o;
+    }
+  });
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.42, 0.5, 24),
+    new THREE.MeshBasicMaterial({ color: token.color, side: THREE.DoubleSide, transparent: true, opacity: 0.6 })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  ring.name = "ring";
+  ring.receiveShadow = false;
+
+  const group = new THREE.Group();
+  group.add(model);
+  group.add(ring);
+  group.userData.tokenId = token.id;
+  group.traverse((o) => (o.userData.tokenId = token.id)); // for raycasting hits anywhere on the model
+
+  return {
+    group,
+    pivots,
+    ring,
+    displayPos: new THREE.Vector3(token.x, 0, token.y),
+    targetPos: new THREE.Vector3(token.x, 0, token.y),
+    phase: Math.random() * Math.PI * 2,
+  };
+}
+
+function syncScene(state) {
+  if (state.gridSize !== GRID_SIZE) {
+    GRID_SIZE = state.gridSize;
+    scene.remove(floorGroup);
+    floorGroup = buildFloor(GRID_SIZE);
+    scene.add(floorGroup);
+  }
+
+  const seen = new Set();
+  for (const token of Object.values(state.tokens)) {
+    seen.add(token.id);
+    let entry = tokenMeshes[token.id];
+    if (!entry) {
+      entry = createTokenEntry(token);
+      scene.add(entry.group);
+      tokenMeshes[token.id] = entry;
+    }
+    // Position is NOT set directly here — targetPos is updated, and the
+    // render loop lerps displayPos toward it each frame so movement
+    // reads as a walk rather than a teleport (see animate() below).
+    entry.targetPos.set(token.x, 0, token.y);
+    entry.ring.material.color.set(token.color);
+    const isCurrentTurn = state.turnOrder[state.currentTurn] === token.id;
+    entry.ring.material.opacity = isCurrentTurn ? 1 : 0.35;
+    entry.group.scale.setScalar(token.hp <= 0 ? 0.001 : 1); // "downed" tokens shrink away
+  }
+  for (const id of Object.keys(tokenMeshes)) {
+    if (!seen.has(id)) {
+      scene.remove(tokenMeshes[id].group);
+      delete tokenMeshes[id];
+    }
+  }
+}
+
+// Let the DM click a token to select it, then click a tile to move it there.
+renderer.domElement.addEventListener("dblclick", (e) => {
+  if (myRole !== "dm") return;
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const meshes = Object.values(tokenMeshes).map((t) => t.group);
+  const hits = raycaster.intersectObjects(meshes, true);
+  if (hits.length) {
+    let obj = hits[0].object;
+    selectedTokenId = obj.userData.tokenId;
+  }
+});
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1); // clamp so a stalled tab doesn't jump on resume
+  const t = clock.getElapsedTime();
+
+  const lerpFactor = 1 - Math.pow(0.001, dt); // frame-rate-independent smoothing
+  for (const entry of Object.values(tokenMeshes)) {
+    entry.displayPos.lerp(entry.targetPos, lerpFactor);
+    const walking = entry.displayPos.distanceTo(entry.targetPos) > 0.02;
+    const walkPhase = t * 4 + entry.phase;
+
+    if (entry.pivots.LeftLegPivot) entry.pivots.LeftLegPivot.rotation.x = walking ? Math.sin(walkPhase) * 0.5 : 0;
+    if (entry.pivots.RightLegPivot) entry.pivots.RightLegPivot.rotation.x = walking ? -Math.sin(walkPhase) * 0.5 : 0;
+    if (entry.pivots.LeftArmPivot) entry.pivots.LeftArmPivot.rotation.x = walking ? -Math.sin(walkPhase) * 0.4 : 0;
+    if (entry.pivots.RightArmPivot) entry.pivots.RightArmPivot.rotation.x = walking ? Math.sin(walkPhase) * 0.4 : 0;
+    if (entry.pivots.Head) entry.pivots.Head.rotation.y = Math.sin(t * 0.7 + entry.phase) * 0.15;
+
+    const bob = walking ? Math.abs(Math.sin(walkPhase * 0.5)) * 0.06 : Math.sin(t * 1.5 + entry.phase) * 0.015;
+    entry.group.position.set(entry.displayPos.x, bob, entry.displayPos.z);
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ---------------------------------------------------------------------
+// HUD rendering
+// ---------------------------------------------------------------------
+socket.on("state", (state) => {
+  latestState = state;
+  syncScene(state);
+  renderTurnList(state);
+  renderPlayerList(state);
+  renderChat(state);
+});
+
+function renderTurnList(state) {
+  const el = document.getElementById("turnList");
+  el.innerHTML = "";
+  state.turnOrder.forEach((tid, i) => {
+    const tok = state.tokens[tid];
+    if (!tok) return;
+    const row = document.createElement("div");
+    row.className = "token-row" + (i === state.currentTurn ? " current" : "");
+    row.innerHTML = `<span class="swatch" style="background:${tok.color}"></span>${tok.name}<span class="hp">${tok.hp}/${tok.maxHp} HP</span>`;
+    if (myRole === "dm" || tok.ownerId === selfId) {
+      row.style.cursor = "pointer";
+      row.title = "Click to select / adjust HP";
+      row.onclick = () => {
+        if (myRole === "dm") selectedTokenId = tid;
+        const val = prompt(`Set HP for ${tok.name}`, tok.hp);
+        if (val !== null && !isNaN(parseInt(val, 10))) {
+          socket.emit("setHp", { tokenId: tid, hp: parseInt(val, 10) });
+        }
+      };
+    }
+    el.appendChild(row);
+  });
+}
+
+function renderPlayerList(state) {
+  const el = document.getElementById("playerList");
+  el.innerHTML = "";
+  Object.values(state.players).forEach((p) => {
+    const tok = p.tokenId ? state.tokens[p.tokenId] : null;
+    const row = document.createElement("div");
+    row.className = "token-row";
+    row.innerHTML = `<span class="swatch" style="background:${tok ? tok.color : "#666"}"></span>${p.name}${p.role === "dm" ? " (DM)" : ""}`;
+    el.appendChild(row);
+  });
+}
+
+function renderChat(state) {
+  const el = document.getElementById("chatlog");
+  const wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 10;
+  el.innerHTML = state.log
+    .map((m) =>
+      m.who === "system"
+        ? `<div class="sys">${escapeHtml(m.text)}</div>`
+        : `<div><span class="who">${escapeHtml(m.who)}:</span> ${escapeHtml(m.text)}</div>`
+    )
+    .join("");
+  if (wasAtBottom) el.scrollTop = el.scrollHeight;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---------------------------------------------------------------------
+// HUD interactions
+// ---------------------------------------------------------------------
+document.getElementById("nextTurnBtn").onclick = () => socket.emit("nextTurn");
+document.getElementById("rollBtn").onclick = () => {
+  socket.emit("rollDice", document.getElementById("diceInput").value);
+};
+document.getElementById("diceInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("rollBtn").click();
+});
+document.getElementById("chatSendBtn").onclick = sendChat;
+document.getElementById("chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+function sendChat() {
+  const input = document.getElementById("chatInput");
+  if (!input.value.trim()) return;
+  socket.emit("chat", input.value);
+  input.value = "";
+}
+document.getElementById("spawnBtn").onclick = () => {
+  document.getElementById("spawnForm").classList.toggle("open");
+};
+document.getElementById("spawnConfirm").onclick = () => {
+  const name = document.getElementById("spawnName").value || "Monster";
+  const kind = document.getElementById("spawnKind").value || "goblin";
+  const hp = document.getElementById("spawnHp").value || "10";
+  const color = document.getElementById("spawnColor").value || "#999999";
+  socket.emit("spawnToken", {
+    name, hp, color, kind,
+    x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2),
+  });
+  document.getElementById("spawnForm").classList.remove("open");
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "_generated": "Built from rules/*.md by tools/build.py - do not edit.",
+  "rules": {
+    "attacks": {
+      "attack_roll": "1d20",
+      "base_defence": 10,
+      "melee_range_tiles": 1,
+      "default_damage": "1d6",
+      "critical_damage_multiplier": 2
+    },
+    "damage-and-healing": {
+      "starting_hp": 20,
+      "min_hp": 0,
+      "downed_at_hp": 0,
+      "healing_caps_at_max": true,
+      "overkill_carries_over": false
+    },
+    "dice-rolls": {
+      "notation_pattern": "^(\\d*)d(\\d+)([+-]\\d+)?$",
+      "default_roll": "1d20",
+      "max_dice_per_roll": 100,
+      "max_sides": 1000,
+      "critical_success": 20,
+      "critical_failure": 1
+    },
+    "dm-tools": {
+      "dm_can_move_any_token": true,
+      "dm_controls_turn_advance": true,
+      "players_can_edit_own_hp": true,
+      "players_can_move_own_token_only": true
+    },
+    "movement": {
+      "base_move_tiles": 4,
+      "diagonal_cost": 1,
+      "difficult_terrain_multiplier": 2,
+      "grid_size": 14,
+      "can_move_through_allies": true,
+      "can_move_through_enemies": false
+    },
+    "turn-order": {
+      "initiative_roll": "1d20",
+      "rounds_are_simultaneous": false,
+      "actions_per_turn": 1,
+      "moves_per_turn": 1
+    }
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "attacks": {
+    "id": "attacks",
+    "kind": "rule",
+    "title": "Attacks",
+    "summary": "Roll to hit against the target's defence, then roll damage. Melee reaches one tile; ranged attacks have a listed range.",
+    "summary_html": "Roll to hit against the target's defence, then roll damage. Melee reaches one tile; ranged attacks have a listed range.",
+    "html": "<p>An attack is an action, so ordinarily you get one per turn — see <a href=\"#rule-turn-order\" data-rule-id=\"turn-order\">Turn Order</a>.</p>\n<h4>Resolving an attack</h4>\n<p>Roll 1d20 and add your relevant modifier. If the total meets or beats the target's defence, you hit. An unmodified defence is 10; armour, cover and magic adjust it from there.</p>\n<p>A critical success on the attack roll (see <a href=\"#rule-dice-rolls\" data-rule-id=\"dice-rolls\">Rolling Dice</a>) hits automatically and multiplies the damage dice by 2. Multiply the dice, not the modifier.</p>\n<h4>Range</h4>\n<p>Melee attacks reach 1 tile. Ranged attacks list their own range; beyond it you simply cannot make the attack, rather than suffering a penalty.</p>\n<h4>Damage</h4>\n<p>On a hit, roll the weapon's damage — 1d6 if the weapon has nothing listed — and apply it as described in <a href=\"#rule-damage-and-healing\" data-rule-id=\"damage-and-healing\">Damage and Healing</a>.</p>",
+    "tags": [
+      "core",
+      "combat"
+    ],
+    "related": [
+      "damage-and-healing",
+      "dice-rolls",
+      "turn-order"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-attacks"
+  },
+  "damage-and-healing": {
+    "id": "damage-and-healing",
+    "kind": "rule",
+    "title": "Damage and Healing",
+    "summary": "Hit points measure how much harm you can absorb. At zero you are downed; healing never carries you above your maximum.",
+    "summary_html": "Hit points measure how much harm you can absorb. At zero you are downed; healing never carries you above your maximum.",
+    "html": "<p>Every creature has <strong>hit points</strong>: an abstract pool covering luck, stamina, minor wounds and sheer stubbornness. A starting character has 20 of them.</p>\n<h4>Taking damage</h4>\n<p>Damage subtracts from your current hit points. Damage rolls never critical — see <a href=\"#rule-dice-rolls\" data-rule-id=\"dice-rolls\">Rolling Dice</a>. Hit points cannot fall below 0; excess damage is simply discarded rather than carrying over into anything worse.</p>\n<p>At 0 hit points you are <strong>downed</strong>: you are out of the fight, unable to act, and stable unless the fiction says otherwise. This game does not use death saves. Whether a downed character dies is a question for the table, not the dice.</p>\n<h4>Healing</h4>\n<p>Healing adds hit points back. It cannot carry you above your maximum — surplus healing is wasted, not stored. Nothing in the base rules heals a downed character back to acting on the same turn they fell.</p>\n<p>Applying damage or healing is a Dungeon Master action in play; see <a href=\"#rule-dm-tools\" data-rule-id=\"dm-tools\">Running the Game</a>.</p>",
+    "tags": [
+      "core",
+      "combat",
+      "health"
+    ],
+    "related": [
+      "dice-rolls",
+      "dm-tools"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-damage-and-healing"
+  },
+  "dice-rolls": {
+    "id": "dice-rolls",
+    "kind": "rule",
+    "title": "Rolling Dice",
+    "summary": "Uncertain actions resolve by rolling dice in XdY+Z notation and comparing the total against a target number.",
+    "summary_html": "Uncertain actions resolve by rolling dice in <code>XdY+Z</code> notation and comparing the total against a target number.",
+    "html": "<p>When the outcome of an action is genuinely in doubt, you roll dice for it. Everything in this game resolves the same way, whether you are picking a lock, swinging an axe, or convincing a guard to look the other way.</p>\n<h4>Notation</h4>\n<p>Rolls are written as <code>XdY+Z</code>: roll <code>X</code> dice with <code>Y</code> sides each, sum them, then add <code>Z</code>. Writing the die alone (<code>d20</code>) means a single die. The modifier is optional and may be negative.</p>\n<p>A single roll may use at most 100 dice, with at most 1000 sides each. If you find yourself needing more than that, you are solving the wrong problem.</p>\n<h4>The standard die</h4>\n<p>Most checks use 1d20. Rolling 20 on that die is a critical success and always succeeds regardless of modifiers or target number. Rolling 1 is a critical failure and always fails, however capable the character.</p>\n<p>Only the standard die produces criticals. Damage rolls, healing rolls, and other quantity rolls have no critical range at all — see <a href=\"#rule-damage-and-healing\" data-rule-id=\"damage-and-healing\">Damage and Healing</a>.</p>",
+    "tags": [
+      "core",
+      "resolution"
+    ],
+    "related": [
+      "damage-and-healing"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-dice-rolls"
+  },
+  "dm-tools": {
+    "id": "dm-tools",
+    "kind": "rule",
+    "title": "Running the Game",
+    "summary": "The Dungeon Master controls initiative, spawns and removes creatures, and adjusts hit points directly.",
+    "summary_html": "The Dungeon Master controls initiative, spawns and removes creatures, and adjusts hit points directly.",
+    "html": "<p>The Dungeon Master runs the world, adjudicates anything the rules do not cover, and is the only participant who can advance the round.</p>\n<h4>Authority in play</h4>\n<p>The Dungeon Master may move any token on the map, spawn creatures, remove them, and set any creature's hit points directly. Players may move only their own token, and may adjust only their own hit points — this is a convenience for tracking, not permission to heal at will.</p>\n<p>Advancing to the next combatant in the initiative order is the Dungeon Master's call alone. See <a href=\"#rule-turn-order\" data-rule-id=\"turn-order\">Turn Order</a> for what that order is and how it is set.</p>\n<h4>Adjudication</h4>\n<p>When the rules are silent, the Dungeon Master decides, and the decision stands for the rest of the session. Write it down; if the same question comes up twice, it belongs in the rules rather than in the ruling.</p>",
+    "tags": [
+      "dm",
+      "procedure"
+    ],
+    "related": [
+      "turn-order"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-dm-tools"
+  },
+  "movement": {
+    "id": "movement",
+    "kind": "rule",
+    "title": "Movement",
+    "summary": "A move carries you a number of tiles across the grid. Difficult ground costs double; some ground stops you entirely.",
+    "summary_html": "A move carries you a number of tiles across the grid. Difficult ground costs double; some ground stops you entirely.",
+    "html": "<p>The battle map is a grid of square tiles, 14 on a side. Distance is counted in tiles, never in feet or metres — this game does not care how big a tile \"really\" is, and neither should you.</p>\n<h4>How far you go</h4>\n<p>A move carries you up to 4 tiles. Diagonal steps cost 1 tile, the same as orthogonal ones; this is deliberately generous and deliberately simple.</p>\n<p>Difficult ground — rubble, deep water, a floor of broken glass — costs 2 tiles for every tile entered. The Dungeon Master declares difficult ground when the scene is described, not after you have committed to a route.</p>\n<h4>Who is in the way</h4>\n<p>You may move through a tile occupied by an ally. You may not move through one occupied by an enemy: you must go around, or remove them from the tile first.</p>\n<p>You get one move per turn ordinarily — see <a href=\"#rule-turn-order\" data-rule-id=\"turn-order\">Turn Order</a>.</p>",
+    "tags": [
+      "core",
+      "combat",
+      "map"
+    ],
+    "related": [
+      "turn-order"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-movement"
+  },
+  "turn-order": {
+    "id": "turn-order",
+    "kind": "rule",
+    "title": "Turn Order",
+    "summary": "Combat runs in rounds. Every combatant acts once per round, in a fixed initiative order set when combat begins.",
+    "summary_html": "Combat runs in rounds. Every combatant acts once per round, in a fixed initiative order set when combat begins.",
+    "html": "<p>When talking stops and violence starts, time breaks into <strong>rounds</strong>. Every combatant — player characters, monsters, the innkeeper who picked the wrong side — acts exactly once per round.</p>\n<h4>Establishing the order</h4>\n<p>At the start of combat, each combatant rolls 1d20. Highest goes first, and that order holds for the whole fight. Ties are broken by the Dungeon Master, who should break them in the players' favour when it genuinely does not matter.</p>\n<h4>What a turn contains</h4>\n<p>On your turn you may take 1 action and 1 move, in either order. You may always choose to do less. Talking is free, within reason — a shouted warning costs nothing, a monologue costs your action.</p>\n<p>Moving is measured in tiles; see <a href=\"#rule-movement\" data-rule-id=\"movement\">Movement</a> for what a move gets you and what stops it. If your action is an attack, see <a href=\"#rule-attacks\" data-rule-id=\"attacks\">Attacks</a>.</p>\n<p>Rounds do not resolve simultaneously. Each combatant's turn fully finishes — damage applied, effects triggered — before the next begins.</p>",
+    "tags": [
+      "core",
+      "combat"
+    ],
+    "related": [
+      "attacks",
+      "movement"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-turn-order"
+  },
+  "ch-basics": {
+    "id": "ch-basics",
+    "kind": "section",
+    "title": "The Basics",
+    "summary": "How uncertainty is resolved, and how time is divided.",
+    "summary_html": "How uncertainty is resolved, and how time is divided.",
+    "html": "<p>Two ideas carry most of the game: you roll dice when the outcome is in doubt, and when things get violent, time breaks into turns. Everything else builds on these.</p>",
+    "tags": [],
+    "related": [],
+    "includes": [
+      "dice-rolls",
+      "turn-order"
+    ],
+    "book_anchor": "#rule-ch-basics"
+  },
+  "ch-combat": {
+    "id": "ch-combat",
+    "kind": "section",
+    "title": "Fighting",
+    "summary": "Moving, attacking, and taking harm.",
+    "summary_html": "Moving, attacking, and taking harm.",
+    "html": "<p>Combat is deliberately mechanical — grid, tiles, hit points — because the fiction around it is not. The rules here tell you what happens; they do not tell you what it looks like.</p>",
+    "tags": [],
+    "related": [],
+    "includes": [
+      "movement",
+      "attacks",
+      "damage-and-healing"
+    ],
+    "book_anchor": "#rule-ch-combat"
+  },
+  "ch-running": {
+    "id": "ch-running",
+    "kind": "section",
+    "title": "Behind the Screen",
+    "summary": "What the Dungeon Master controls, and how to rule on gaps.",
+    "summary_html": "What the Dungeon Master controls, and how to rule on gaps.",
+    "html": "<p>The last chapter is for whoever is running the game. Players are welcome to read it — there is nothing secret here, only responsibility.</p>",
+    "tags": [],
+    "related": [],
+    "includes": [
+      "dm-tools"
+    ],
+    "book_anchor": "#rule-ch-running"
+  },
+  "rulebook": {
+    "id": "rulebook",
+    "kind": "section",
+    "title": "Game Rules",
+    "summary": "The complete rules, in reading order.",
+    "summary_html": "The complete rules, in reading order.",
+    "html": "<p>This is the whole game. It is short on purpose: everything here fits in one sitting, and anything not covered is a question for the table rather than a gap to be patched with more rules.</p>\n<p>Read it in order the first time. After that, use the contents above — every rule is self-contained enough to be looked up on its own, and the in-game help shows the same text you are reading now.</p>",
+    "tags": [],
+    "related": [],
+    "includes": [
+      "ch-basics",
+      "ch-combat",
+      "ch-running"
+    ],
+    "book_anchor": "#rule-rulebook"
+  }
+}

@@ -1,0 +1,5 @@
+fastapi>=0.111
+uvicorn[standard]>=0.30
+python-socketio>=5.11
+aiofiles>=23.2
+aiosqlite>=0.20
