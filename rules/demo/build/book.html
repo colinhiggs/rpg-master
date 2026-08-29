@@ -26,14 +26,6 @@ code { background: #1e2029; padding: 1px 5px; border-radius: 4px; font-size: 14p
         text-transform: uppercase; letter-spacing: .06em; margin: 6px 0 0; }
 .summary { font-style: italic; color: #a8acb8; margin: 10px 0 18px;
            border-left: 2px solid #2f3341; padding-left: 14px; }
-.mechanics { font-family: system-ui, sans-serif; font-size: 13px; background: #1a1c23;
-             border: 1px solid #2a2c36; border-radius: 8px; padding: 12px 14px; margin: 22px 0; }
-.mechanics .label { margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
-                    letter-spacing: .06em; color: #6e7280; }
-.mechanics table { width: 100%; border-collapse: collapse; }
-.mechanics td { padding: 3px 0; vertical-align: top; }
-.mechanics td.k { color: #8b8fa0; padding-right: 14px; white-space: nowrap; }
-.mechanics td.v { color: #e6c07b; font-family: ui-monospace, Menlo, monospace; }
 nav { font-family: system-ui, sans-serif; font-size: 14px; background: #1a1c23;
       border: 1px solid #2a2c36; border-radius: 10px; padding: 16px 20px; margin-bottom: 40px; }
 nav .label { margin: 0 0 10px; font-size: 11px; text-transform: uppercase;
@@ -67,7 +59,6 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <h4>The standard die</h4>
 <p>Most checks use 1d20. Rolling 20 on that die is a critical success and always succeeds regardless of modifiers or target number. Rolling 1 is a critical failure and always fails, however capable the character.</p>
 <p>Only the standard die produces criticals. Damage rolls, healing rolls, and other quantity rolls have no critical range at all — see <a href="#rule-damage-and-healing" data-rule-id="damage-and-healing">Damage and Healing</a>.</p>
-<div class="mechanics"><p class="label">Mechanics reference</p><table><tr><td class="k">notation_pattern</td><td class="v">^(\d*)d(\d+)([+-]\d+)?$</td></tr><tr><td class="k">default_roll</td><td class="v">1d20</td></tr><tr><td class="k">max_dice_per_roll</td><td class="v">100</td></tr><tr><td class="k">max_sides</td><td class="v">1000</td></tr><tr><td class="k">critical_success</td><td class="v">20</td></tr><tr><td class="k">critical_failure</td><td class="v">1</td></tr></table></div>
 <p class="related">See also: <a href="#rule-damage-and-healing">Damage and Healing</a></p>
 </section>
 <section class="doc" id="rule-turn-order">
@@ -81,7 +72,6 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p>On your turn you may take 1 action and 1 move, in either order. You may always choose to do less. Talking is free, within reason — a shouted warning costs nothing, a monologue costs your action.</p>
 <p>Moving is measured in tiles; see <a href="#rule-movement" data-rule-id="movement">Movement</a> for what a move gets you and what stops it. If your action is an attack, see <a href="#rule-attacks" data-rule-id="attacks">Attacks</a>.</p>
 <p>Rounds do not resolve simultaneously. Each combatant's turn fully finishes — damage applied, effects triggered — before the next begins.</p>
-<div class="mechanics"><p class="label">Mechanics reference</p><table><tr><td class="k">initiative_roll</td><td class="v">1d20</td></tr><tr><td class="k">rounds_are_simultaneous</td><td class="v">false</td></tr><tr><td class="k">actions_per_turn</td><td class="v">1</td></tr><tr><td class="k">moves_per_turn</td><td class="v">1</td></tr></table></div>
 <p class="related">See also: <a href="#rule-attacks">Attacks</a>, <a href="#rule-movement">Movement</a></p>
 </section>
 </section>
@@ -102,7 +92,6 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p>You get one move per turn ordinarily — see <a href="#rule-turn-order" data-rule-id="turn-order">Turn Order</a>.</p>
 <h4>Design note</h4>
 <p>Diagonals costing the same as orthogonal steps is wrong and deliberate. Charging more is more accurate and slows every turn down with arithmetic; the generosity is the price of a grid you can move on without counting twice.</p>
-<div class="mechanics"><p class="label">Mechanics reference</p><table><tr><td class="k">base_move_tiles</td><td class="v">4</td></tr><tr><td class="k">diagonal_cost</td><td class="v">1</td></tr><tr><td class="k">difficult_terrain_multiplier</td><td class="v">2</td></tr><tr><td class="k">grid_size</td><td class="v">14</td></tr><tr><td class="k">can_move_through_allies</td><td class="v">true</td></tr><tr><td class="k">can_move_through_enemies</td><td class="v">false</td></tr></table></div>
 <p class="related">See also: <a href="#rule-turn-order">Turn Order</a></p>
 </section>
 <section class="doc" id="rule-attacks">
@@ -117,7 +106,6 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p>Melee attacks reach 1 tile. Ranged attacks list their own range; beyond it you simply cannot make the attack, rather than suffering a penalty.</p>
 <h4>Damage</h4>
 <p>On a hit, roll the weapon's damage — 1d6 if the weapon has nothing listed — and apply it as described in <a href="#rule-damage-and-healing" data-rule-id="damage-and-healing">Damage and Healing</a>.</p>
-<div class="mechanics"><p class="label">Mechanics reference</p><table><tr><td class="k">attack_roll</td><td class="v">1d20</td></tr><tr><td class="k">base_defence</td><td class="v">10</td></tr><tr><td class="k">melee_range_tiles</td><td class="v">1</td></tr><tr><td class="k">default_damage</td><td class="v">1d6</td></tr><tr><td class="k">critical_damage_multiplier</td><td class="v">2</td></tr></table></div>
 <p class="related">See also: <a href="#rule-damage-and-healing">Damage and Healing</a>, <a href="#rule-dice-rolls">Rolling Dice</a>, <a href="#rule-turn-order">Turn Order</a></p>
 </section>
 <section class="doc" id="rule-damage-and-healing">
@@ -131,7 +119,6 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <h4>Healing</h4>
 <p>Healing adds hit points back. It cannot carry you above your maximum — surplus healing is wasted, not stored. Nothing in the base rules heals a downed character back to acting on the same turn they fell.</p>
 <p>Applying damage or healing is a Dungeon Master action in play; see <a href="#rule-dm-tools" data-rule-id="dm-tools">Running the Game</a>.</p>
-<div class="mechanics"><p class="label">Mechanics reference</p><table><tr><td class="k">starting_hp</td><td class="v">20</td></tr><tr><td class="k">min_hp</td><td class="v">0</td></tr><tr><td class="k">downed_at_hp</td><td class="v">0</td></tr><tr><td class="k">healing_caps_at_max</td><td class="v">true</td></tr><tr><td class="k">overkill_carries_over</td><td class="v">false</td></tr></table></div>
 <p class="related">See also: <a href="#rule-dice-rolls">Rolling Dice</a>, <a href="#rule-dm-tools">Running the Game</a></p>
 </section>
 </section>
@@ -149,7 +136,6 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p>Advancing to the next combatant in the initiative order is the Dungeon Master's call alone. See <a href="#rule-turn-order" data-rule-id="turn-order">Turn Order</a> for what that order is and how it is set.</p>
 <h4>Adjudication</h4>
 <p>When the rules are silent, the Dungeon Master decides, and the decision stands for the rest of the session. Write it down; if the same question comes up twice, it belongs in the rules rather than in the ruling.</p>
-<div class="mechanics"><p class="label">Mechanics reference</p><table><tr><td class="k">dm_can_move_any_token</td><td class="v">true</td></tr><tr><td class="k">dm_controls_turn_advance</td><td class="v">true</td></tr><tr><td class="k">players_can_edit_own_hp</td><td class="v">true</td></tr><tr><td class="k">players_can_move_own_token_only</td><td class="v">true</td></tr></table></div>
 <p class="related">See also: <a href="#rule-turn-order">Turn Order</a></p>
 </section>
 </section>

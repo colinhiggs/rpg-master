@@ -10,6 +10,13 @@ consumers, and the same toolset works for every ruleset:
 | `<ruleset>/build/snippets.json` | In-game context help: tooltips, popups, "what does this mean?" panels |
 | `<ruleset>/build/mechanics.json` | Pure data, no prose — what the game server actually runs on |
 
+The three are for different readers, and only the book is for a person
+reading start to finish. `mechanics:` never appears in it as a table of
+raw keys: it exists to feed the server and to let the linter prove the
+prose has not drifted from it, and every value it holds is already in
+the prose by interpolation. Anyone who wants the data itself wants
+`mechanics.json`, which is the readable form of it.
+
 Change a rule file, rebuild, and all three move together. Nothing
 downstream is ever hand-edited.
 

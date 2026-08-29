@@ -93,14 +93,6 @@ code { background: #1e2029; padding: 1px 5px; border-radius: 4px; font-size: 14p
         text-transform: uppercase; letter-spacing: .06em; margin: 6px 0 0; }
 .summary { font-style: italic; color: #a8acb8; margin: 10px 0 18px;
            border-left: 2px solid #2f3341; padding-left: 14px; }
-.mechanics { font-family: system-ui, sans-serif; font-size: 13px; background: #1a1c23;
-             border: 1px solid #2a2c36; border-radius: 8px; padding: 12px 14px; margin: 22px 0; }
-.mechanics .label { margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
-                    letter-spacing: .06em; color: #6e7280; }
-.mechanics table { width: 100%; border-collapse: collapse; }
-.mechanics td { padding: 3px 0; vertical-align: top; }
-.mechanics td.k { color: #8b8fa0; padding-right: 14px; white-space: nowrap; }
-.mechanics td.v { color: #e6c07b; font-family: ui-monospace, Menlo, monospace; }
 nav { font-family: system-ui, sans-serif; font-size: 14px; background: #1a1c23;
       border: 1px solid #2a2c36; border-radius: 10px; padding: 16px 20px; margin-bottom: 40px; }
 nav .label { margin: 0 0 10px; font-size: 11px; text-transform: uppercase;
@@ -113,25 +105,6 @@ nav ol ol li { margin: 2px 0; font-size: 13px; }
 footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
          font-family: system-ui, sans-serif; font-size: 12px; color: #5d616e; }
 """
-
-
-def format_value(v):
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, (dict, list)):
-        return json.dumps(v)
-    return str(v)
-
-
-def mechanics_table(mechanics, prefix=""):
-    rows = []
-    for k, v in mechanics.items():
-        key = f"{prefix}{k}"
-        if isinstance(v, dict):
-            rows.extend(mechanics_table(v, prefix=f"{key}."))
-        else:
-            rows.append(f'<tr><td class="k">{key}</td><td class="v">{format_value(v)}</td></tr>')
-    return rows
 
 
 def render_doc_for_book(doc_id, docs, compiled, depth, stack):
@@ -181,12 +154,13 @@ def render_doc_for_book(doc_id, docs, compiled, depth, stack):
                 )
 
     if depth > 0:
-        if doc.mechanics:
-            rows = "".join(mechanics_table(doc.mechanics))
-            parts.append(
-                '<div class="mechanics"><p class="label">Mechanics reference</p>'
-                f"<table>{rows}</table></div>"
-            )
+        # No mechanics table here on purpose. `mechanics:` exists to feed
+        # the game server and to let the linter prove the prose has not
+        # drifted from it -- both machine concerns. Every value it holds
+        # is already interpolated into the prose above, so printing the
+        # raw keys again would only restate the rule in a worse language.
+        # mechanics.json remains the readable form for anyone who wants
+        # the data itself.
         if doc.links_out:
             links = ", ".join(
                 f'<a href="#rule-{t}">{docs[t].title}</a>' for t in sorted(doc.links_out)

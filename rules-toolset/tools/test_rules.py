@@ -721,6 +721,16 @@ else:
         check("book renders documents in include order",
               [d for d, _ in book_order] == [d for d, _ in include_order(rules, "rulebook")])
         check("book has no unresolved templates", "{{" not in book)
+        # mechanics: is a machine concern -- the server reads it and the
+        # linter proves the prose matches it. The book prints the prose,
+        # which already carries every value by interpolation.
+        check("book does not print a mechanics table",
+              "Mechanics reference" not in book and 'class="mechanics"' not in book)
+        check("mechanics values still reach the book through the prose",
+              any(str(v) in book
+                  for r in rules.values()
+                  for v in r.mechanics.values()
+                  if isinstance(v, int) and not isinstance(v, bool)))
 
 
 print(f"\n{passed} passed, {failed} failed")
