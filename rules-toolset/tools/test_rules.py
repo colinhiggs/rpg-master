@@ -684,6 +684,71 @@ check("drift detection still reads inside book-only blocks",
       any("base_move_tiles" in x for x in lint_errs), str(lint_errs))
 shutil.rmtree(tmp)
 # ---------------------------------------------------------------------
+print("\nCreatures:")
+
+tmp = with_temp_rules({
+    "root.md": """---
+id: root
+title: Root
+kind: section
+summary: R.
+---
+{% include goblin %}
+""",
+    "bestiary/goblin.md": """---
+id: goblin
+title: Goblin
+kind: creature
+summary: Small, mean, numerous.
+mechanics:
+  core_hit_points: 4
+---
+A goblin has {{ mechanics.core_hit_points }} core hit points.
+""",
+})
+r, c, e = compile_rules(tmp, root_id="root")
+check("kind: creature is accepted", not e, str(e))
+warnings, lint_errs = lint.run_all(r, root_id="root")
+check("a creature nothing links to is not an orphan warning",
+      not any("discoverable" in w for w in warnings), str(warnings))
+check("a creature still gets the drift check", not lint_errs, str(lint_errs))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "bestiary/goblin.md": """---
+id: goblin
+title: Goblin
+kind: creature
+---
+No summary.
+""",
+})
+try:
+    compile_rules(tmp, root_id="goblin")
+    check("a creature still needs a summary", False)
+except RuleError as ex:
+    check("a creature still needs a summary", "summary" in str(ex), str(ex))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "bestiary/goblin.md": """---
+id: goblin
+title: Goblin
+kind: monster
+summary: S.
+---
+Body.
+""",
+})
+try:
+    compile_rules(tmp, root_id="goblin")
+    check("an unknown kind is still rejected", False)
+except RuleError as ex:
+    check("an unknown kind is still rejected", "must be one of" in str(ex), str(ex))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
 print("\nSubdirectories:")
 
 tmp = with_temp_rules({

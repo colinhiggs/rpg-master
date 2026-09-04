@@ -8,6 +8,9 @@
 #
 # Two kinds of document, distinguished by `kind:` in frontmatter:
 #   kind: rule     (default) a rule — has mechanics, appears in snippets
+#   kind: creature a creature - a stat block, statted the same way a
+#                  character is; behaves like a rule but is found
+#                  through the bestiary rather than by cross-reference
 #   kind: section  book structure — chapters, the root template
 # Both live in the same id namespace and both can include either kind.
 #
@@ -51,7 +54,7 @@ INCLUDE_RE = re.compile(r"\{\%\s*include\s+([A-Za-z0-9_-]+)\s*\%\}")
 BOOK_ONLY_RE = re.compile(r"\{\%\s*book-only\s*\%\}(.*?)\{\%\s*endbook-only\s*\%\}", re.S)
 BOOK_ONLY_TOKEN_RE = re.compile(r"\{\%\s*(book-only|endbook-only)\s*\%\}")
 
-KINDS = ("rule", "section")
+KINDS = ("rule", "section", "creature")
 REQUIRED_FIELDS = ("id", "title")
 
 
@@ -111,7 +114,7 @@ def parse_doc_file(path: Path) -> Doc:
     # A rule with no summary has no tooltip text, which defeats half the
     # point of the format. Sections are book scaffolding, so theirs is
     # optional.
-    if kind == "rule" and not str(meta.get("summary", "")).strip():
+    if kind != "section" and not str(meta.get("summary", "")).strip():
         raise RuleError(f"{path.name}: frontmatter missing required field 'summary'")
 
     if "spine" in meta:

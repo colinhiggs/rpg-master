@@ -156,7 +156,9 @@ def check_duplicate_includes(docs, root_id="rulebook"):
 def check_link_orphans(docs):
     """A rule nothing links to is harder to find when reading. Sections
     and the book root are expected to have no inbound links, so they are
-    exempt."""
+    exempt, and so are creatures: a bestiary entry is found by looking
+    in the bestiary, and requiring a cross-reference to each of them
+    would mean one warning per creature forever."""
     linked_to = set()
     for doc in docs.values():
         linked_to |= doc.links_out
@@ -172,7 +174,7 @@ def check_summary_length(rules, max_chars=240):
     long stops being a snippet and starts being an essay."""
     warnings = []
     for rule in rules.values():
-        if rule.kind != "rule":
+        if rule.kind == "section":
             continue  # section summaries are book scaffolding, not tooltips
         flat = " ".join(rule.summary.split())
         if len(flat) > max_chars:
