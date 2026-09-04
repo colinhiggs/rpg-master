@@ -142,13 +142,20 @@ def parse_doc_file(path: Path) -> Doc:
 
 
 def load_docs(*dirs) -> dict:
-    """Load every .md from the given directories into one id namespace."""
+    """Load every .md under the given directories into one id namespace.
+
+    The search is recursive so that a ruleset with a lot of documents of
+    one kind -- a bestiary, a spell index -- can file them in a
+    subdirectory without them crowding out the rules proper. Nothing
+    else changes: ids stay a single flat namespace, so where a document
+    sits on disk has no bearing on how it is linked or included, and two
+    documents with the same id remain an error wherever they are."""
     docs = {}
     for d in dirs:
         d = Path(d)
         if not d.exists():
             continue
-        for path in sorted(d.glob("*.md")):
+        for path in sorted(d.rglob("*.md")):
             doc = parse_doc_file(path)
             if doc.id in docs:
                 raise RuleError(

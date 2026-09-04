@@ -56,7 +56,9 @@ def with_temp_rules(files: dict):
     """Build a throwaway docs dir from {filename: content}."""
     tmp = Path(tempfile.mkdtemp())
     for fname, content in files.items():
-        (tmp / fname).write_text(content, encoding="utf-8")
+        path = tmp / fname
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
     return tmp
 
 
@@ -681,6 +683,61 @@ lint_errs = lint.check_hardcoded_numbers(r)
 check("drift detection still reads inside book-only blocks",
       any("base_move_tiles" in x for x in lint_errs), str(lint_errs))
 shutil.rmtree(tmp)
+# ---------------------------------------------------------------------
+print("\nSubdirectories:")
+
+tmp = with_temp_rules({
+    "root.md": """---
+id: root
+title: Root
+kind: section
+summary: R.
+---
+{% include goblin %}
+""",
+    "bestiary/goblin.md": """---
+id: goblin
+title: Goblin
+summary: Small, mean, numerous.
+mechanics:
+  core_hit_points: 4
+---
+A goblin has {{ mechanics.core_hit_points }} core hit points.
+""",
+})
+r, c, e = compile_rules(tmp, root_id="root")
+check("a document in a subdirectory is found", "goblin" in r, str(sorted(r)))
+check("a subdirectory document can be included by bare id", not e, str(e))
+check("interpolation works in a subdirectory document",
+      "4 core hit points" in c.get("goblin", {}).get("html", ""),
+      str(c.get("goblin", {}).get("html", "")))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "a.md": """---
+id: a
+title: Alpha
+summary: One.
+---
+One.
+""",
+    "bestiary/a.md": """---
+id: a
+title: Alpha Again
+summary: Two.
+---
+Two.
+""",
+})
+try:
+    compile_rules(tmp, root_id="a")
+    check("a duplicate id across subdirectories is rejected", False)
+except RuleError as ex:
+    check("a duplicate id across subdirectories is rejected",
+          "duplicate document id" in str(ex), str(ex))
+shutil.rmtree(tmp)
+
+
 
 
 # ---------------------------------------------------------------------
