@@ -386,6 +386,13 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
             flush_para()
             list_buffer.append(item.group(1))
             continue
+        # An indented line beneath a list item is that item carrying on,
+        # not a new paragraph. Rule prose is hard-wrapped, so most items
+        # have one; treating them as paragraphs closed the list after
+        # the first line and left the remainder stranded below it.
+        if list_buffer and raw_line[:1].isspace():
+            list_buffer[-1] += " " + line.strip()
+            continue
         flush_para() if list_buffer else None
         flush_list()
         buffer.append(line)

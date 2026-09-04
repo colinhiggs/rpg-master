@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import lint
 from rulesc import (
     IncludeCycleError, RuleError,
-    compile_docs, detect_cycles, include_order,
+    compile_docs, detect_cycles, include_order, render_markdown,
 )
 
 TOOLSET_ROOT = Path(__file__).parent.parent       # .../rpg-master/rules-toolset
@@ -682,6 +682,32 @@ check("drift detection still reads inside book-only blocks",
       any("base_move_tiles" in x for x in lint_errs), str(lint_errs))
 shutil.rmtree(tmp)
 
+
+# ---------------------------------------------------------------------
+print("\nMarkdown rendering:")
+
+# Rule prose is hard-wrapped, so nearly every list item runs to a second
+# line. Treating those as new paragraphs used to close the list after the
+# first line and strand the rest underneath it, which rendered as a very
+# short bullet, a gap, and then loose text.
+wrapped = render_markdown(
+    "- **Storytelling.** The rules should push the group towards\n"
+    "  descriptive narration rather than away from it.\n"
+    "- **Fun.** It should be fun to play.\n"
+)
+check("a continuation does not split one list into two",
+      wrapped.count("<ul>") == 1 and wrapped.count("<li>") == 2,
+      wrapped)
+check("a wrapped list item keeps its continuation inside the item",
+      "descriptive narration" in wrapped.split("</ul>")[0]
+      and "<p>descriptive" not in wrapped,
+      wrapped)
+
+# A line back at the left margin after a list is still a new paragraph.
+after = render_markdown("- one\n- two\nand both of those are boosts:\n")
+check("an unindented line after a list still ends it",
+      after.count("<ul>") == 1 and "<p>and both of those" in after,
+      after)
 
 # ---------------------------------------------------------------------
 print("\nBuild outputs:")
