@@ -328,11 +328,29 @@ def resolve_interpolations(doc: Doc, docs: dict, errors: list) -> str:
         except KeyError:
             errors.append(f"{doc.id}: {{{{ {expr} }}}} does not resolve to a value")
             return f"[?{expr}?]"
-        if isinstance(value, bool):
-            return "yes" if value else "no"
-        return str(value)
+        return _render_value(value)
 
     return INTERP_RE.sub(repl, doc.body)
+
+
+def _render_value(value, as_words: bool = False) -> str:
+    """Render one mechanics value as something a reader reads.
+
+    A list becomes a comma-separated phrase rather than a Python repr,
+    wherever it appears: a mechanic that holds several tags is a phrase
+    in the prose that points at it, not a fragment of source code.
+
+    Underscores are a different matter and are left alone unless asked
+    for, because a string in mechanics is not always a name. It may be a
+    formula, where the underscores are the identifiers it is written in
+    and taking them out would be a lie about the arithmetic."""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_render_value(v, as_words) for v in value)
+    if isinstance(value, str):
+        return value.replace("_", " ") if as_words else value
+    return str(value)
 
 
 def _titleise(key: str) -> str:
@@ -361,20 +379,15 @@ def _table_cell(value) -> str:
     yes/no exactly as they do through interpolation, and a value a row
     simply does not have reads as a dash rather than as 'None'.
 
-    Identifier-shaped strings lose their underscores, because a cell is
-    something a reader reads: 'damage reduction of one type', not
-    damage_reduction_of_one_type. Row labels are treated the same way,
-    so a table is legible throughout without every value needing a
-    hand-written label."""
+    Otherwise a cell reads as the same value reads through
+    interpolation, with two differences. A cell asks for identifiers as
+    words -- 'damage reduction of one type', not
+    damage_reduction_of_one_type -- because a cell is scanned rather
+    than read, and unlike prose it has no author to write the words out.
+    And a pipe is escaped, which would otherwise end the cell early."""
     if value is _MISSING:
         return MISSING_CELL
-    if isinstance(value, bool):
-        return "yes" if value else "no"
-    if isinstance(value, (list, tuple)):
-        return ", ".join(_table_cell(v) for v in value)
-    if isinstance(value, str):
-        return value.replace("_", " ").replace("|", r"\|")
-    return str(value)
+    return _render_value(value, as_words=True).replace("|", r"\|")
 
 
 _MISSING = object()

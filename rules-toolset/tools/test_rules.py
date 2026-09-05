@@ -145,6 +145,29 @@ id: a
 title: Alpha
 summary: A.
 mechanics:
+  domains: [healing, death]
+  stance: full_defence
+  quick: true
+---
+It answers to {{ mechanics.domains }} from a {{ mechanics.stance }},
+and that is {{ mechanics.quick }}.
+""",
+})
+r, c, e = compile_rules(tmp)
+check("a list interpolates as a phrase, not a repr",
+      "to healing, death from" in c["a"]["html"], c["a"]["html"])
+check("an identifier-shaped string interpolates verbatim, formulas being strings too",
+      "a full_defence," in c["a"]["html"], c["a"]["html"])
+check("a boolean still interpolates as yes",
+      "is yes." in c["a"]["html"], c["a"]["html"])
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "a.md": """---
+id: a
+title: Alpha
+summary: A.
+mechanics:
   speed: 7
 ---
 Missing {{ mechanics.nope }} here.
