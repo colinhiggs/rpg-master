@@ -32,6 +32,10 @@
 #   [[other-id]]                 link (target's title used as text)
 #   [[other-id|custom text]]     link with custom text
 #   {% include other-id %}       splice another document in here
+#   {% table mechanics.some_map columns=a,b %}
+#                                a table built FROM mechanics, so that a
+#                                tabulation of data cannot re-type it
+#   {% table mechanics rows=dagger,sword columns=damage:Damage %}
 #   {% book-only %}...{% endbook-only %}
 #                                content for the long-form book ONLY --
 #                                kept in book.html, dropped from the
@@ -41,6 +45,7 @@
 #                                about why the rule is that shape.
 
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -51,6 +56,9 @@ FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.S)
 INTERP_RE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
 LINK_RE = re.compile(r"\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]")
 INCLUDE_RE = re.compile(r"\{\%\s*include\s+([A-Za-z0-9_-]+)\s*\%\}")
+# Table directives may span lines, so that a long column list can stay
+# inside the 72-column wrap the prose uses.
+TABLE_RE = re.compile(r"\{\%\s*table\s+(.*?)\s*\%\}", re.S)
 BOOK_ONLY_RE = re.compile(r"\{\%\s*book-only\s*\%\}(.*?)\{\%\s*endbook-only\s*\%\}", re.S)
 BOOK_ONLY_TOKEN_RE = re.compile(r"\{\%\s*(book-only|endbook-only)\s*\%\}")
 
@@ -327,6 +335,165 @@ def resolve_interpolations(doc: Doc, docs: dict, errors: list) -> str:
     return INTERP_RE.sub(repl, doc.body)
 
 
+def _titleise(key: str) -> str:
+    """goblin_boss -> 'Goblin boss'. Sentence case, not title case: the
+    rules capitalise like prose, not like a spreadsheet header."""
+    words = str(key).replace("_", " ").strip()
+    return words[:1].upper() + words[1:]
+
+
+def _spec_list(raw: str) -> list:
+    """Parse 'key,other:Label' into [(key, label), ...]. A label is
+    optional and defaults to the key, sentence-cased."""
+    out = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        key, _, label = part.partition(":")
+        key = key.strip()
+        out.append((key, label.strip() or _titleise(key)))
+    return out
+
+
+def _table_cell(value) -> str:
+    """Render one mechanics value as table-cell text. Booleans read as
+    yes/no exactly as they do through interpolation, and a value a row
+    simply does not have reads as a dash rather than as 'None'."""
+    if value is _MISSING:
+        return MISSING_CELL
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value).replace("|", r"\|")
+
+
+_MISSING = object()
+
+
+def expand_tables(doc: Doc, docs: dict, text: str, errors: list) -> str:
+    """Expand {% table ... %} into a Markdown pipe table built from
+    mechanics.
+
+    The tables in this game are tabulations of data that already exists
+    in frontmatter — the weapon list, a creature's statistics — so
+    authoring them by hand would re-type the values a second time and
+    put them straight back in reach of the drift this whole format
+    exists to prevent. Worse, the drift linter cannot catch the failure
+    that matters here: it sees a number that disagrees, and is blind to
+    a column that was simply left out. Generating the table from the
+    map means a field cannot be forgotten, only deliberately excluded.
+
+    Emitting Markdown rather than HTML keeps one table renderer for
+    both authored and generated tables, and keeps the resolved
+    document meaningful if it is ever written out as Markdown."""
+
+    def repl(match):
+        try:
+            args = shlex.split(match.group(1))
+        except ValueError as exc:
+            errors.append(f"{doc.id}: {{% table %}} arguments do not parse - {exc}")
+            return ""
+        if not args:
+            errors.append(f"{doc.id}: {{% table %}} needs a mechanics path to tabulate")
+            return ""
+
+        source_expr, opts = args[0], {}
+        for arg in args[1:]:
+            key, sep, value = arg.partition("=")
+            if not sep:
+                errors.append(
+                    f"{doc.id}: {{% table %}} argument '{arg}' is not key=value")
+                return ""
+            opts[key.strip()] = value
+
+        unknown = set(opts) - {"rows", "columns", "header", "value_header"}
+        if unknown:
+            errors.append(
+                f"{doc.id}: {{% table %}} does not understand "
+                f"{', '.join(sorted(unknown))}")
+            return ""
+
+        # Same addressing as interpolation: a bare path is this
+        # document's mechanics, 'other:mechanics.x' is another's.
+        if ":" in source_expr:
+            other_id, dotted = (p.strip() for p in source_expr.split(":", 1))
+            if other_id not in docs:
+                errors.append(
+                    f"{doc.id}: {{% table {source_expr} %}} references unknown "
+                    f"document '{other_id}'")
+                return ""
+            source = {"mechanics": docs[other_id].mechanics}
+        else:
+            dotted, source = source_expr, {"mechanics": doc.mechanics}
+        try:
+            data = _lookup_path(source, dotted)
+        except KeyError:
+            errors.append(
+                f"{doc.id}: {{% table {source_expr} %}} does not resolve to a value")
+            return ""
+        if not isinstance(data, dict):
+            errors.append(
+                f"{doc.id}: {{% table {source_expr} %}} is not a map, so there is "
+                "nothing to tabulate")
+            return ""
+
+        columns = _spec_list(opts["columns"]) if "columns" in opts else None
+        grid = columns is not None
+
+        if "rows" in opts:
+            rows = _spec_list(opts["rows"])
+            missing = [k for k, _ in rows if k not in data]
+            if missing:
+                errors.append(
+                    f"{doc.id}: {{% table {source_expr} %}} names "
+                    f"{', '.join(missing)}, which {'are' if len(missing) > 1 else 'is'} "
+                    "not in that map")
+                return ""
+            # A grid row must be a sub-map to have columns; a pairs row
+            # must not be, or the cell would print a dict at the reader.
+            wrong = [k for k, _ in rows if isinstance(data[k], dict) is not grid]
+            if wrong:
+                errors.append(
+                    f"{doc.id}: {{% table {source_expr} %}} names {', '.join(wrong)}, "
+                    + ("which has no fields to put in columns"
+                       if grid else
+                       "which is a map, so it needs columns= to tabulate"))
+                return ""
+        else:
+            # Grid rows are the sub-maps; pairs rows are the plain
+            # values. Choosing by shape means the common case needs no
+            # argument at all and cannot silently include the wrong kind.
+            rows = [(k, _titleise(k)) for k, v in data.items()
+                    if isinstance(v, dict) is grid]
+        if not rows:
+            errors.append(
+                f"{doc.id}: {{% table {source_expr} %}} selected no rows")
+            return ""
+
+        if grid:
+            head = [opts.get("header", "Name")] + [lbl for _, lbl in columns]
+            aligns = ["---"] * len(head)
+            body = [[label] + [_table_cell(data[key].get(f, _MISSING)
+                                           if isinstance(data[key], dict) else _MISSING)
+                               for f, _ in columns]
+                    for key, label in rows]
+        else:
+            head = [opts.get("header", "Field"), opts.get("value_header", "Value")]
+            aligns = ["---"] * 2
+            body = [[label, _table_cell(data[key])] for key, label in rows]
+
+        lines = ["| " + " | ".join(head) + " |",
+                 "|" + "|".join(aligns) + "|"]
+        lines += ["| " + " | ".join(cells) + " |" for cells in body]
+        # Blank lines around it so the table is its own block whatever
+        # the directive was sitting next to.
+        return "\n" + "\n".join(lines) + "\n"
+
+    return TABLE_RE.sub(repl, text)
+
+
 def resolve_links(text: str, doc: Doc, docs: dict, errors: list, href_for) -> str:
     def repl(match):
         target = match.group(1).strip()
@@ -339,6 +506,39 @@ def resolve_links(text: str, doc: Doc, docs: dict, errors: list, href_for) -> st
         return f'<a href="{href_for(target)}" data-rule-id="{target}">{text_label}</a>'
 
     return LINK_RE.sub(repl, text)
+
+
+# ---------------------------------------------------------------------
+# Tables
+# ---------------------------------------------------------------------
+CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
+DELIMITER_CELL_RE = re.compile(r"^:?-{2,}:?$")
+MISSING_CELL = "—"           # em dash, for a value a row does not have
+
+
+def _split_table_row(line: str) -> list:
+    """Split a pipe-table row into cells. A cell may contain a literal
+    pipe if it is escaped."""
+    core = line.strip()
+    if core.startswith("|"):
+        core = core[1:]
+    if core.endswith("|") and not core.endswith(r"\|"):
+        core = core[:-1]
+    return [c.strip().replace(r"\|", "|") for c in CELL_SPLIT_RE.split(core)]
+
+
+def _is_delimiter_row(cells: list) -> bool:
+    return bool(cells) and all(DELIMITER_CELL_RE.match(c.strip()) for c in cells)
+
+
+def _alignment_of(cell: str):
+    cell = cell.strip()
+    left, right = cell.startswith(":"), cell.endswith(":")
+    if left and right:
+        return "center"
+    if right:
+        return "right"
+    return None                   # left is the default; say nothing
 
 
 # ---------------------------------------------------------------------
@@ -364,6 +564,7 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
     html_parts = []
     buffer = []
     list_buffer = []
+    table_buffer = []
 
     def flush_para():
         if buffer:
@@ -378,12 +579,48 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
             html_parts.append(f"<ul>{items}</ul>")
             list_buffer.clear()
 
+    def flush_table():
+        if not table_buffer:
+            return
+        rows = [_split_table_row(l) for l in table_buffer]
+        table_buffer.clear()
+        aligns = None
+        if len(rows) > 1 and _is_delimiter_row(rows[1]):
+            aligns = [_alignment_of(c) for c in rows[1]]
+            head, body = rows[0], rows[2:]
+        else:
+            head, body = None, rows
+        width = max(len(r) for r in ([head] if head else []) + body)
+
+        def cells(row, tag):
+            out = []
+            for i in range(width):
+                text = inline(row[i]) if i < len(row) else ""
+                align = aligns[i] if aligns and i < len(aligns) else None
+                attr = f' style="text-align:{align}"' if align else ""
+                out.append(f"<{tag}{attr}>{text}</{tag}>")
+            return "<tr>" + "".join(out) + "</tr>"
+
+        parts = []
+        if head:
+            parts.append("<thead>" + cells(head, "th") + "</thead>")
+        if body:
+            parts.append("<tbody>" + "".join(cells(r, "td") for r in body) + "</tbody>")
+        html_parts.append("<table>" + "".join(parts) + "</table>")
+
     for raw_line in text.split("\n"):
         line = raw_line.rstrip()
         if not line.strip():
             flush_para()
             flush_list()
+            flush_table()
             continue
+        if line.strip().startswith("|"):
+            flush_para()
+            flush_list()
+            table_buffer.append(line.strip())
+            continue
+        flush_table()
         heading = re.match(r"^(#{2,4})\s+(.*)$", line)
         if heading:
             flush_para()
@@ -409,6 +646,7 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
 
     flush_para()
     flush_list()
+    flush_table()
     return "\n".join(html_parts)
 
 
@@ -430,7 +668,11 @@ def compile_docs(*dirs, root_id: str = "rulebook"):
     compiled = {}
     for doc in docs.values():
         interpolated = resolve_interpolations(doc, docs, errors)
-        linked = resolve_links(interpolated, doc, docs, errors, href_for=lambda t: f"#rule-{t}")
+        # After interpolation, before links: a generated cell may hold a
+        # [[link]], and nothing downstream should have to know whether a
+        # table was authored or built.
+        tabulated = expand_tables(doc, docs, interpolated, errors)
+        linked = resolve_links(tabulated, doc, docs, errors, href_for=lambda t: f"#rule-{t}")
         compiled[doc.id] = {
             "doc": doc,
             # kept WITH include directives intact - build.py splits on

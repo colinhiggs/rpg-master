@@ -746,6 +746,83 @@ try:
 except RuleError as ex:
     check("an unknown kind is still rejected", "must be one of" in str(ex), str(ex))
 shutil.rmtree(tmp)
+# ---------------------------------------------------------------------
+print("\nTables:")
+
+check("a pipe table renders as a table",
+      "<table>" in render_markdown("| A | B |\n|---|---|\n| 1 | 2 |"))
+check("the delimiter row becomes a header row",
+      "<th>A</th>" in render_markdown("| A | B |\n|---|---|\n| 1 | 2 |"))
+check("a table with no delimiter row has no header",
+      "<th>" not in render_markdown("| A | B |\n| 1 | 2 |"))
+check("alignment comes from the delimiter row",
+      'text-align:right' in render_markdown("| A |\n|--:|\n| 1 |"))
+check("prose either side of a table stays in paragraphs",
+      render_markdown("Before.\n\n| A |\n|---|\n| 1 |\n\nAfter.").startswith("<p>Before.</p>"))
+check("a table does not swallow the list before it",
+      render_markdown("- item\n\n| A |\n|---|\n| 1 |").startswith("<ul>"))
+
+TABLE_DOC = """---
+id: w
+title: Weapons
+summary: S.
+mechanics:
+  finesse_size: S
+  dagger:
+    accuracy: 2
+    damage: 5
+    quick: true
+  great_axe:
+    accuracy: -1
+    damage: 12
+---
+%s
+"""
+
+tmp = with_temp_rules({"w.md": TABLE_DOC % (
+    "{% table mechanics columns=accuracy,damage,quick header=Weapon %}")})
+r, c, e = compile_rules(tmp, root_id="w")
+html = c["w"]["html"]
+check("a table directive builds a table", not e and "<table>" in html, str(e))
+check("its rows are the sub-maps, not the loose values",
+      "<td>Dagger</td>" in html and "Finesse size" not in html, html)
+check("a key becomes a sentence-cased label", "<td>Great axe</td>" in html, html)
+check("a boolean cell reads as yes", "<td>yes</td>" in html, html)
+check("a field a row lacks reads as a dash", chr(8212) in html, html)
+check("the first column header is settable", "<th>Weapon</th>" in html, html)
+_, lint_errs = lint.run_all(r, root_id="w")
+check("a generated table does not trip the drift linter", not lint_errs, str(lint_errs))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({"w.md": TABLE_DOC % "{% table mechanics.dagger header=Stat %}"})
+r, c, e = compile_rules(tmp, root_id="w")
+check("a map with no columns= renders as field/value pairs",
+      not e and "<th>Stat</th>" in c["w"]["html"] and "<th>Value</th>" in c["w"]["html"],
+      str(e) + c["w"]["html"])
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({"w.md": TABLE_DOC % (
+    "{% table mechanics\n   rows=dagger:\"The dagger\"\n   columns=damage:\"Damage per hit\" %}")})
+r, c, e = compile_rules(tmp, root_id="w")
+check("a directive may span lines and carry quoted labels",
+      not e and "The dagger" in c["w"]["html"]
+      and "Damage per hit" in c["w"]["html"], str(e) + c["w"]["html"])
+shutil.rmtree(tmp)
+
+for bad, why in [
+    ("{% table mechanics.nope columns=damage %}", "does not resolve"),
+    ("{% table mechanics rows=ghost columns=damage %}", "not in that map"),
+    ("{% table mechanics columns=damage banana=1 %}", "does not understand"),
+    ("{% table mechanics.finesse_size %}", "not a map"),
+    ("{% table mechanics rows=dagger %}", "needs columns="),
+    ("{% table mechanics rows=finesse_size columns=damage %}", "no fields"),
+]:
+    tmp = with_temp_rules({"w.md": TABLE_DOC % bad})
+    r, c, e = compile_rules(tmp, root_id="w")
+    check(f"table error: {why}", any(why in x for x in e), str(e))
+    shutil.rmtree(tmp)
+
+
 
 
 # ---------------------------------------------------------------------
