@@ -975,6 +975,57 @@ check("an unindented line after a list still ends it",
       after)
 
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+print("\nVersioning:")
+
+sys.path.insert(0, str(Path(__file__).parent))
+import build as build_mod
+
+tmpdir = Path(tempfile.mkdtemp())
+check("a ruleset with no VERSION file is unversioned",
+      build_mod.read_version(tmpdir) is None)
+(tmpdir / "VERSION").write_text("1.2.3\n", encoding="utf-8")
+check("VERSION is read and stripped", build_mod.read_version(tmpdir) == "1.2.3")
+(tmpdir / "VERSION").write_text("one point two\n", encoding="utf-8")
+try:
+    build_mod.read_version(tmpdir)
+    check("a version that is not MAJOR.MINOR.PATCH is fatal", False, "no error raised")
+except RuleError as e:
+    check("a version that is not MAJOR.MINOR.PATCH is fatal", "comparable" in str(e), str(e))
+shutil.rmtree(tmpdir)
+
+tmp = with_temp_rules({
+    "a.md": """---
+id: a
+title: Alpha
+summary: A.
+mechanics:
+  speed: 7
+---
+Alpha body.
+""",
+})
+r, c, e = compile_rules(tmp)
+with tempfile.TemporaryDirectory() as td:
+    td = Path(td)
+    build_mod.build_mechanics(r, td / "m.json", version="2.0.1")
+    build_mod.build_snippets(r, c, td / "s.json", version="2.0.1")
+    m = json.loads((td / "m.json").read_text())
+    sn = json.loads((td / "s.json").read_text())
+    check("mechanics.json is stamped", m["_version"] == "2.0.1", str(list(m)))
+    check("the stamp does not join the rules", "_version" not in m["rules"])
+    check("snippets.json is stamped", sn["_version"] == "2.0.1", str(list(sn)))
+    check("a stamp is told from a document by its leading underscore",
+          all(k.startswith("_") or "id" in sn[k] for k in sn), str(list(sn)))
+
+    build_mod.build_mechanics(r, td / "m2.json")
+    build_mod.build_snippets(r, c, td / "s2.json")
+    check("an unversioned build carries no stamp at all",
+          "_version" not in json.loads((td / "m2.json").read_text())
+          and "_version" not in json.loads((td / "s2.json").read_text()))
+shutil.rmtree(tmp)
+
+
 print("\nBuild outputs:")
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -995,7 +1046,8 @@ else:
 
         n2 = build_mod.build_snippets(rules, compiled, td / "s.json")
         snips = json.loads((td / "s.json").read_text())
-        check("snippets.json has one entry per rule", len(snips) == len(rules))
+        check("snippets.json has one entry per rule",
+              len([k for k in snips if not k.startswith("_")]) == len(rules))
         check("every snippet carries a book anchor",
               all(s["book_anchor"].startswith("#rule-") for s in snips.values()))
         check("every snippet has both plain and html summary",
@@ -1012,6 +1064,9 @@ else:
         check("book renders documents in include order",
               [d for d, _ in book_order] == [d for d, _ in include_order(rules, "rulebook")])
         check("book has no unresolved templates", "{{" not in book)
+        build_mod.build_book(rules, compiled, td / "bv.html", version="9.9.9")
+        check("the book shows the version to a reader",
+              "Version 9.9.9" in (td / "bv.html").read_text(encoding="utf-8"))
         # mechanics: is a machine concern -- the server reads it and the
         # linter proves the prose matches it. The book prints the prose,
         # which already carries every value by interpolation.
