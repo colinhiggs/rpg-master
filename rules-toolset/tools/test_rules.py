@@ -794,6 +794,30 @@ _, lint_errs = lint.run_all(r, root_id="w")
 check("a generated table does not trip the drift linter", not lint_errs, str(lint_errs))
 shutil.rmtree(tmp)
 
+tmp = with_temp_rules({"w.md": TABLE_DOC % (
+    "{% table mechanics columns=damage flags=quick:quick %}")})
+r, c, e = compile_rules(tmp, root_id="w")
+html = c["w"]["html"]
+check("flags= collapses booleans into one column",
+      not e and "<th>Properties</th>" in html, str(e) + html)
+check("a row with the flag names it", "<td>quick</td>" in html, html)
+check("a row without it gets a dash", chr(8212) in html, html)
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({"w.md": TABLE_DOC % "{% table mechanics flags=quick %}"})
+r, c, e = compile_rules(tmp, root_id="w")
+check("flags= without columns= is an error",
+      any("no column to put them in" in x for x in e), str(e))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({"w.md": TABLE_DOC % (
+    "{% table mechanics\n   columns=accuracy:Accuracy,\n           damage:Damage %}")})
+r, c, e = compile_rules(tmp, root_id="w")
+check("a list ending in a comma continues on the next line",
+      not e and "<th>Accuracy</th>" in c["w"]["html"]
+      and "<th>Damage</th>" in c["w"]["html"], str(e) + c["w"]["html"])
+shutil.rmtree(tmp)
+
 tmp = with_temp_rules({"w.md": TABLE_DOC % "{% table mechanics.dagger header=Stat %}"})
 r, c, e = compile_rules(tmp, root_id="w")
 check("a map with no columns= renders as field/value pairs",

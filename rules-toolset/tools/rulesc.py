@@ -399,8 +399,18 @@ def expand_tables(doc: Doc, docs: dict, text: str, errors: list) -> str:
             errors.append(f"{doc.id}: {{% table %}} needs a mechanics path to tabulate")
             return ""
 
-        source_expr, opts = args[0], {}
+        # A list that ends in a comma continues on the next line, so a
+        # long column list can wrap inside the same 72 columns the prose
+        # keeps to rather than running off the side of the document.
+        joined = [args[0]]
         for arg in args[1:]:
+            if joined and joined[-1].endswith(","):
+                joined[-1] += arg
+            else:
+                joined.append(arg)
+
+        source_expr, opts = joined[0], {}
+        for arg in joined[1:]:
             key, sep, value = arg.partition("=")
             if not sep:
                 errors.append(
@@ -408,7 +418,8 @@ def expand_tables(doc: Doc, docs: dict, text: str, errors: list) -> str:
                 return ""
             opts[key.strip()] = value
 
-        unknown = set(opts) - {"rows", "columns", "header", "value_header"}
+        unknown = set(opts) - {"rows", "columns", "header", "value_header",
+                               "flags", "flag_header"}
         if unknown:
             errors.append(
                 f"{doc.id}: {{% table %}} does not understand "
@@ -440,6 +451,16 @@ def expand_tables(doc: Doc, docs: dict, text: str, errors: list) -> str:
             return ""
 
         columns = _spec_list(opts["columns"]) if "columns" in opts else None
+        # A boolean field per column gives a wide table of mostly
+        # dashes. flags= collapses several into one column that names
+        # the properties a row actually has, which is how the prose
+        # talks about them anyway.
+        flags = _spec_list(opts["flags"]) if "flags" in opts else None
+        if flags and columns is None:
+            errors.append(
+                f"{doc.id}: {{% table {source_expr} %}} has flags= but no columns=, "
+                "and a field/value table has no column to put them in")
+            return ""
         grid = columns is not None
 
         if "rows" in opts:
@@ -474,11 +495,17 @@ def expand_tables(doc: Doc, docs: dict, text: str, errors: list) -> str:
 
         if grid:
             head = [opts.get("header", "Name")] + [lbl for _, lbl in columns]
+            if flags:
+                head.append(opts.get("flag_header", "Properties"))
             aligns = ["---"] * len(head)
-            body = [[label] + [_table_cell(data[key].get(f, _MISSING)
-                                           if isinstance(data[key], dict) else _MISSING)
-                               for f, _ in columns]
-                    for key, label in rows]
+            body = []
+            for key, label in rows:
+                cells = [label] + [_table_cell(data[key].get(f, _MISSING))
+                                   for f, _ in columns]
+                if flags:
+                    held = [lbl for f, lbl in flags if data[key].get(f)]
+                    cells.append(", ".join(held) if held else MISSING_CELL)
+                body.append(cells)
         else:
             head = [opts.get("header", "Field"), opts.get("value_header", "Value")]
             aligns = ["---"] * 2
