@@ -804,6 +804,25 @@ check("a row with the flag names it", "<td>quick</td>" in html, html)
 check("a row without it gets a dash", chr(8212) in html, html)
 shutil.rmtree(tmp)
 
+tmp = with_temp_rules({"w.md": """---
+id: w
+title: W
+summary: S.
+mechanics:
+  bulwark:
+    protects: mastery_hit_points
+    schools: [life_force, influence_and_command]
+---
+{% table mechanics columns=protects,schools %}
+"""})
+r, c, e = compile_rules(tmp, root_id="w")
+html = c["w"]["html"]
+check("an identifier-shaped cell reads as words",
+      not e and "mastery hit points" in html, str(e) + html)
+check("every item of a list cell is humanised too",
+      "life force, influence and command" in html, html)
+shutil.rmtree(tmp)
+
 tmp = with_temp_rules({"w.md": TABLE_DOC % "{% table mechanics flags=quick %}"})
 r, c, e = compile_rules(tmp, root_id="w")
 check("flags= without columns= is an error",

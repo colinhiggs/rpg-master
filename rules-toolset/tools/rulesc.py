@@ -359,14 +359,22 @@ def _spec_list(raw: str) -> list:
 def _table_cell(value) -> str:
     """Render one mechanics value as table-cell text. Booleans read as
     yes/no exactly as they do through interpolation, and a value a row
-    simply does not have reads as a dash rather than as 'None'."""
+    simply does not have reads as a dash rather than as 'None'.
+
+    Identifier-shaped strings lose their underscores, because a cell is
+    something a reader reads: 'damage reduction of one type', not
+    damage_reduction_of_one_type. Row labels are treated the same way,
+    so a table is legible throughout without every value needing a
+    hand-written label."""
     if value is _MISSING:
         return MISSING_CELL
     if isinstance(value, bool):
         return "yes" if value else "no"
     if isinstance(value, (list, tuple)):
-        return ", ".join(str(v) for v in value)
-    return str(value).replace("|", r"\|")
+        return ", ".join(_table_cell(v) for v in value)
+    if isinstance(value, str):
+        return value.replace("_", " ").replace("|", r"\|")
+    return str(value)
 
 
 _MISSING = object()
