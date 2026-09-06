@@ -47,6 +47,12 @@ The split is deliberate: `demo` exists to exercise this toolset and
 ships with it, while `ico` is a ruleset with its own history that
 happens to be built by it. Neither knows about the other.
 
+An installed ruleset is a copy of another repository. Never edit one in
+place — the edit is invisible to the repository that owns it, and
+because installed wins, it shadows the real source so that changes made
+properly appear to do nothing. `../SHARING.md` has the rest of the
+rules for working on a toolset that several projects write to.
+
 ## Quick start
 
 ```bash
