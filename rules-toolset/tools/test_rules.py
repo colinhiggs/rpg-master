@@ -6,6 +6,7 @@
 # protecting is the invariant "a value exists in exactly one place";
 # each test below is a way that invariant could quietly break.
 
+import argparse
 import json
 import shutil
 import sys
@@ -14,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import build as build_mod
 import lint
 from rulesc import (
     IncludeCycleError, RuleError,
@@ -21,21 +23,42 @@ from rulesc import (
 )
 
 TOOLSET_ROOT = Path(__file__).parent.parent       # .../rpg-master/rules-toolset
-# Same two-place search as build.py: rulesets installed into the game,
-# then rulesets being authored in the outer working directory.
-RULESET_SEARCH_PATH = (TOOLSET_ROOT.parent / "rules",
-                       TOOLSET_ROOT.parent.parent / "rules")
 
 # Which ruleset the "real rules" section below exercises against. The
 # pipeline tests themselves (interpolation, links, includes, cycles,
 # drift detection) build throwaway rulesets with with_temp_rules() and
 # don't depend on this — this only picks which real content acts as an
-# integration smoke test. Override with a CLI arg: `test_rules.py ico`.
-RULESET_NAME = sys.argv[1] if len(sys.argv) > 1 else "demo"
-RULESET_DIR = next((r / RULESET_NAME for r in RULESET_SEARCH_PATH
-                    if (r / RULESET_NAME).exists()), None)
+# integration smoke test.
+#
+# The lookup is build.py's, imported rather than repeated, so the two
+# tools can never disagree about where a ruleset lives. A name is found
+# in the installed directory and then in the outer authoring one;
+# --path reaches a ruleset that is in neither, which is the case for a
+# project holding the toolset and a ruleset as sibling submodules.
+_parser = argparse.ArgumentParser(
+    description="Run the pipeline tests. Most build their own throwaway rulesets; "
+                "the 'real rules' and 'build outputs' sections run against one real one.",
+)
+_parser.add_argument(
+    "ruleset", nargs="?", default="demo",
+    help="Ruleset name, looked up in %s then %s (e.g. 'demo', 'ico'). "
+         "Default: demo." % build_mod.RULESET_SEARCH_PATH,
+)
+_parser.add_argument(
+    "--path", default=None,
+    help="Explicit path to a ruleset directory (containing rules/ and book/), overrides the name.",
+)
+_args = _parser.parse_args()
+
+RULESET_DIR, RULESET_WHERE = build_mod.resolve_ruleset_dir(_args)
 if RULESET_DIR is None:
-    sys.exit("no ruleset '%s' in %s" % (RULESET_NAME, RULESET_SEARCH_PATH))
+    sys.exit("no ruleset '%s' in %s\nUse --path to test a ruleset somewhere else entirely."
+             % (_args.ruleset, build_mod.RULESET_SEARCH_PATH))
+if not RULESET_DIR.exists():
+    sys.exit("no ruleset directory at %s" % RULESET_DIR)
+# From --path the name is the directory's, the same way build.py reports
+# it, so a ruleset checked out under another name says so in the output.
+RULESET_NAME = RULESET_DIR.name
 RULES_DIR = RULESET_DIR / "rules"
 BOOK_DIR = RULESET_DIR / "book"
 
@@ -67,10 +90,10 @@ def compile_rules(d, root_id="rulebook"):
 
 
 # ---------------------------------------------------------------------
-print(f"\nReal rule set ('{RULESET_NAME}'):")
+print(f"\nReal rule set ('{RULESET_NAME}', {RULESET_WHERE}):")
 
 if not RULES_DIR.exists() and not BOOK_DIR.exists():
-    print(f"  SKIPPED — {RULESETS_DIR / RULESET_NAME} has no rules/ or book/ yet "
+    print(f"  SKIPPED — {RULESET_DIR} has no rules/ or book/ yet "
           "(expected for an empty ruleset like a freshly-created 'ico').")
     rules = {}
 else:
@@ -976,10 +999,41 @@ check("an unindented line after a list still ends it",
 
 # ---------------------------------------------------------------------
 # ---------------------------------------------------------------------
-print("\nVersioning:")
+print("\nRuleset lookup:")
 
-sys.path.insert(0, str(Path(__file__).parent))
-import build as build_mod
+check("a ruleset name is found in the search path",
+      build_mod.find_ruleset("demo")[0] is not None)
+check("a name that is nowhere is not found",
+      build_mod.find_ruleset("no-such-ruleset") == (None, None))
+
+# The case --path exists for: a project that holds the toolset and a
+# ruleset as sibling submodules, where the ruleset is in neither search
+# directory and so cannot be named at all.
+tmp = with_temp_rules({
+    "rules/a.md": """---
+id: a
+title: Alpha
+summary: A.
+mechanics:
+  speed: 7
+---
+Alpha body.
+""",
+})
+check("a ruleset outside both search directories is unreachable by name",
+      build_mod.find_ruleset(tmp.name) == (None, None))
+resolved, where = build_mod.resolve_ruleset_dir(
+    argparse.Namespace(ruleset="demo", path=str(tmp)))
+check("--path overrides the name", resolved == tmp and where == "path",
+      f"{resolved} ({where})")
+r, c, e = compile_rules(resolved / "rules")
+check("a ruleset reached by path compiles like any other", r and not e, str(e))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+print("\nVersioning:")
 
 tmpdir = Path(tempfile.mkdtemp())
 check("a ruleset with no VERSION file is unversioned",
@@ -1027,9 +1081,6 @@ shutil.rmtree(tmp)
 
 
 print("\nBuild outputs:")
-
-sys.path.insert(0, str(Path(__file__).parent))
-import build as build_mod
 
 if not rules:
     print(f"  SKIPPED — no '{RULESET_NAME}' ruleset content to build outputs from.")

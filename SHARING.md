@@ -61,9 +61,8 @@ python3 tools/build.py demo && python3 tools/test_rules.py
 python3 tools/test_rules.py ico
 ```
 
-The second of those needs a layout where the name `ico` resolves, which
-a consuming project's does not — see below. Run it from the rules
-project's working directory, or before merging.
+Both tools take `--path` for a ruleset the name lookup cannot reach —
+see below.
 
 Prefer additions that are inert until used. A new directive that no
 existing document contains, or a new optional frontmatter key, changes
@@ -116,27 +115,24 @@ toolset's worked example and test fixture.
 
 The two search directories are relative to the toolset, so a project
 that holds this repository and a ruleset as sibling submodules finds
-neither. Build by path:
+neither. Both tools take `--path` for exactly that case:
 
 ```bash
 cd rpg-master/rules-toolset
 python3 tools/build.py --path ../../rules-ico
+python3 tools/test_rules.py --path ../../rules-ico
 ```
 
-The printed ruleset name comes from the directory name, so it will say
-`Built 'rules-ico'`. The outputs are unaffected.
+The ruleset name is then the directory's, so both report `rules-ico`
+rather than `ico`. Only the label differs.
 
-**`tools/test_rules.py` has no `--path`.** It takes a ruleset name and
-searches the same two directories, so from a layout like that it can
-only run against `demo` — the ruleset it is pointed at by name is
-unreachable and its suite cannot be run there at all. That is the
-sharpest edge in this repository today: a consuming project can build a
-ruleset it cannot test.
-
-Teaching the toolset to find rulesets in a layout like that — `--path`
-on `test_rules.py` to match `build.py`, and beyond that an environment
-variable or a small config file saying where to look — is the obvious
-next extension, and a good first test of everything above.
+`test_rules.py` resolves a ruleset by importing `build.py`'s own
+lookup rather than repeating it, so the two can never disagree about
+where a ruleset lives — which is the shape any further work here should
+take. Teaching the toolset to find rulesets in a layout like that
+without being told each time — an environment variable, or a small
+config file saying where to look — is the next step, and `--path` is
+the floor under it.
 
 ## What is not versioned here
 
@@ -167,9 +163,9 @@ answers to the same question. None of these are built.
   already does it correctly, including the linter that makes a
   hardcoded number a build error. An adventure compiler should call it,
   not reimplement it.
-- **Ruleset lookup**, as above — `--path` on `test_rules.py` first,
-  because until it exists a consuming project cannot run the suite it
-  is told to run.
+- **Ruleset lookup without being told each time**, as above. `--path`
+  on both tools is done; a project that builds the same ruleset every
+  day should not have to spell out where it is every day.
 
 ## Working in a submodule checkout
 
