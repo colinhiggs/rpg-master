@@ -28,6 +28,10 @@ kinds:
     data: [setup]
     discovery: include
     refs: [setup.foes, setup.leads_to]
+    # One document per directory: the file is always called
+    # encounter.md and its id is the directory's name, so an encounter
+    # can keep its own maps and handouts beside it.
+    id_from: directory
   foe:
     data: [mechanics]
     discovery: lookup

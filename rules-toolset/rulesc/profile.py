@@ -34,6 +34,10 @@ ACTIONS = (KEEP, DROP)
 SHAPES = ("book", "snippets", "data")
 SUMMARY_RULES = ("required", "optional")
 DISCOVERY = ("link", "include", "lookup")
+# Where a document's id has to come from. Either way the id is derivable
+# from the path, which is the whole point: a document cannot be renamed
+# on disk without its links noticing.
+ID_SOURCES = ("stem", "directory")
 
 # The lint checks a profile may switch off. check_hardcoded_numbers is
 # deliberately not among them: it is the one the whole format exists to
@@ -88,7 +92,7 @@ def _one_of(value, allowed, what: str):
 
 @dataclass(frozen=True)
 class Kind:
-    """One document kind, and the three things the toolset branches on.
+    """One document kind, and everything the toolset branches on.
 
     `discovery` says how a reader is expected to FIND a document, and it
     is the generic form of exemptions the linter used to hardcode. A
@@ -108,12 +112,13 @@ class Kind:
     discovery: str = "link"
     audience: str = None
     refs: tuple = ()
+    id_from: str = "stem"
 
     @classmethod
     def from_mapping(cls, name: str, raw):
         raw = _mapping(raw, f"kind '{name}'")
-        _no_unknown_keys(raw, ("summary", "data", "discovery", "audience", "refs"),
-                         f"kind '{name}'")
+        _no_unknown_keys(raw, ("summary", "data", "discovery", "audience", "refs",
+                               "id_from"), f"kind '{name}'")
         return cls(
             name=name,
             summary=_one_of(raw.get("summary", "required"), SUMMARY_RULES,
@@ -123,6 +128,8 @@ class Kind:
                               f"kind '{name}' discovery"),
             audience=raw.get("audience"),
             refs=_sequence(raw.get("refs"), f"kind '{name}' refs"),
+            id_from=_one_of(raw.get("id_from", "stem"), ID_SOURCES,
+                            f"kind '{name}' id_from"),
         )
 
 
@@ -178,9 +185,15 @@ class Target:
         audiences = dict(audiences) if audiences else {}
         if "default" not in audiences:
             if shape == "data":
-                # A data target carries no prose, so no tag can leak
-                # through it. Requiring a default here would be noise.
-                audiences["default"] = DROP
+                # A data target carries no prose, so no audience tag can
+                # leak through it and requiring a default would be
+                # noise. It keeps rather than drops, because the thing
+                # an audience still reaches here is a KIND's default
+                # audience, and dropping those would quietly leave every
+                # GM-only NPC out of the file the engine loads. A
+                # consumer that genuinely wants a player-facing data
+                # file says `audiences: { default: drop }` and means it.
+                audiences["default"] = KEEP
             else:
                 raise RuleError(
                     f"{PROFILE_FILE}: target '{name}' needs audiences.default "
@@ -257,7 +270,7 @@ class Profile:
                                root=DEFAULT_ROOT, output="build/book.html"),
                 "snippets": Target("snippets", "snippets", {"default": DROP},
                                    output="build/snippets.json"),
-                "mechanics": Target("mechanics", "data", {"default": DROP},
+                "mechanics": Target("mechanics", "data", {"default": KEEP},
                                     blocks=(DEFAULT_BLOCK,),
                                     output="build/mechanics.json"),
             },

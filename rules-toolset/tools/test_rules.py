@@ -1224,6 +1224,60 @@ ADVENTURE = rulesc.Profile.from_mapping({
 check("a corpus can declare kinds the toolset has never heard of",
       sorted(ADVENTURE.kinds) == ["npc", "scene", "section"])
 
+BY_DIR = rulesc.Profile.from_mapping({
+    "kinds": {"part": {"summary": "optional", "data": [], "discovery": "include",
+                       "id_from": "directory"}},
+    "audiences": [],
+    "roots": [],
+})
+tmp = with_temp_rules({
+    "the-ford/part.md": """---
+id: the-ford
+title: The Ford
+kind: part
+---
+Body.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=BY_DIR)
+check("id_from: directory takes the id from the containing directory",
+      not corpus.errors and "the-ford" in corpus.docs, str(corpus.errors))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "the-ford/part.md": """---
+id: something-else
+title: The Ford
+kind: part
+---
+Body.
+""",
+})
+try:
+    rulesc.compile_corpus(tmp, profile=BY_DIR)
+    check("an id that does not match its directory is an error", False)
+except RuleError as ex:
+    check("an id that does not match its directory is an error",
+          "containing directory's name 'the-ford'" in str(ex), str(ex))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "a.md": """---
+id: not-a
+title: A
+summary: A rule.
+---
+Body.
+""",
+})
+try:
+    rulesc.compile_corpus(tmp)
+    check("the filename stem rule is untouched by default", False)
+except RuleError as ex:
+    check("the filename stem rule is untouched by default",
+          "filename stem 'a'" in str(ex), str(ex))
+shutil.rmtree(tmp)
+
 tmp = with_temp_rules({
     "s.md": """---
 id: s
@@ -1807,14 +1861,17 @@ else:
     check("the supplement passes lint", not lint_errs, str(lint_errs))
     check("it declares kinds of its own",
           sorted(profile.kinds) == ["encounter", "foe", "note", "section"])
+    check("one of them takes its id from its directory",
+          profile.kinds["encounter"].id_from == "directory"
+          and "the-crossing" in corpus.docs)
     check("it declares two audiences and four targets",
           len(profile.audiences) == 2 and len(profile.targets) == 4)
     data = json.loads((SUPPLEMENT / "build" / "data.json").read_text(encoding="utf-8"))
     check("a multi-block data output names its blocks",
           data["_blocks"] == ["mechanics", "setup"], str(data.get("_blocks")))
     check("a multi-block data output keys each document by block name",
-          set(data["rules"]["river-crossing"]) == {"setup"},
-          str(data["rules"]["river-crossing"]))
+          set(data["rules"]["the-crossing"]) == {"setup"},
+          str(data["rules"]["the-crossing"]))
     book = (SUPPLEMENT / "build" / "book.html").read_text(encoding="utf-8")
     handout = (SUPPLEMENT / "build" / "handout.html").read_text(encoding="utf-8")
     check("the book keeps GM material", "Running it" in book)

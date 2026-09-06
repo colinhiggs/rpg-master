@@ -36,7 +36,7 @@
         ]
       }
     },
-    "river-crossing": {
+    "the-crossing": {
       "setup": {
         "foes": [
           "goblin-scout",
@@ -54,7 +54,7 @@
             "difficulty": 9
           }
         ],
-        "leads_to": "aftermath"
+        "leads_to": "the-far-bank"
       }
     }
   }

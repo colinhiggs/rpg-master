@@ -1,5 +1,5 @@
 ---
-id: aftermath
+id: the-far-bank
 title: The Far Bank
 kind: encounter
 tags: [encounter]
@@ -23,7 +23,7 @@ something either way.
 
 This document carries no data block at all, which is allowed: a kind
 says which blocks its documents *may* carry, not which they must. It is
-here because [[river-crossing]] names it in frontmatter — `setup.leads_to`
+here because [[the-crossing]] names it in frontmatter — `setup.leads_to`
 is declared as holding a document id, so an encounter pointing at an
 encounter that does not exist is a build error rather than something
 discovered at the table.

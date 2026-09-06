@@ -171,10 +171,19 @@ def parse_doc_file(path: Path, profile: Profile = None) -> Doc:
             "{% include %} directives in book/rulebook.md and its chapters."
         )
 
-    stem = path.stem
-    if meta["id"] != stem:
+    # An id is always derivable from where the document sits, so that a
+    # file cannot be renamed without its links noticing. Which part of
+    # the path it comes from is the kind's business: a corpus that files
+    # one document per directory -- an adventure whose overview is always
+    # called adventure.md, alongside its scenes and its maps -- takes the
+    # directory's name, and the guarantee is the same either way.
+    if spec.id_from == "directory":
+        expected, what = path.parent.name, "the containing directory's name"
+    else:
+        expected, what = path.stem, "the filename stem"
+    if meta["id"] != expected:
         raise RuleError(
-            f"{path.name}: id '{meta['id']}' must match the filename stem '{stem}' "
+            f"{path.name}: id '{meta['id']}' must match {what} '{expected}' "
             "(so links, includes and file paths can't drift apart)"
         )
 

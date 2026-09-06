@@ -1,5 +1,5 @@
 ---
-id: river-crossing
+id: the-crossing
 title: The Crossing
 kind: encounter
 tags: [encounter]
@@ -13,7 +13,7 @@ setup:
       on_success: cross-unseen
     - id: keep-your-footing
       difficulty: 9
-  leads_to: aftermath
+  leads_to: the-far-bank
 ---
 
 The water is slow and shallow enough to wade and the far bank is a long
@@ -34,12 +34,21 @@ water. If the party spotted the reeds, reverse that: the captain has
 nothing to gain by waiting for an ambush that is not going to happen.
 {% endgm-only %}
 
-Whichever way it ends, it ends at [[aftermath]].
+Whichever way it ends, it ends at [[the-far-bank]].
 
 {% book-only %}
 ## Design note
 
-Two things here have no equivalent in a ruleset. The block is called
+Three things here have no equivalent in a ruleset. This document is
+called `encounter.md` and sits in a directory called `the-crossing`,
+which is where its id comes from: the `encounter` kind declares
+`id_from: directory`, for a corpus that files one document per directory
+alongside that document's own maps and handouts. The guarantee is the
+one the filename rule gives everywhere else -- an id is derivable from
+where the document sits, so a document cannot be moved without its links
+noticing.
+
+The block is called
 `setup` rather than `mechanics`, and the prose interpolates out of it by
 name; a block is addressed by the name its kind declares, so the toolset
 never has to be told what an encounter is.

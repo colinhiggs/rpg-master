@@ -28,10 +28,10 @@ python3 tools/test_rules.py demo-supplement
 | `corpus.yaml` `audiences` | Two tags, `book-only` and `gm-only`, against four targets |
 | `corpus.yaml` `targets` | Four outputs over three shapes. `book` and `handout` are the same shape differing only in who is reading |
 | `corpus.yaml` `references` | Reading `demo`'s build outputs, and only its build outputs |
-| `rules/river-crossing.md` | A data block called `setup` rather than `mechanics`; a list addressed by each entry's `id`; a cross-corpus link and interpolation |
+| `rules/encounters/the-crossing/encounter.md` | `id_from: directory`; a data block called `setup` rather than `mechanics`; a list addressed by each entry's `id`; a cross-corpus link and interpolation |
 | `rules/goblin-captain.md` | `based_on`: a scalar replaced, a scalar inherited, a list replaced wholesale |
 | `rules/gm-notes.md` | A kind whose default audience covers the whole document, with no marker in the file |
-| `rules/aftermath.md` | A document with no data block at all, reached because another document's frontmatter declares a `refs` path pointing at it |
+| `rules/encounters/the-far-bank/encounter.md` | A document with no data block at all, reached because another document's frontmatter declares a `refs` path pointing at it |
 
 ## Two things that look wrong and are not
 

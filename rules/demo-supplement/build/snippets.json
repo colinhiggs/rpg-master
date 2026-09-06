@@ -6,8 +6,27 @@
       "source": "../demo/build"
     }
   ],
-  "aftermath": {
-    "id": "aftermath",
+  "the-crossing": {
+    "id": "the-crossing",
+    "kind": "encounter",
+    "title": "The Crossing",
+    "summary": "A wide ford, watched from the reeds by people who chose it first.",
+    "summary_html": "A wide ford, watched from the reeds by people who chose it first.",
+    "html": "<p>The water is slow and shallow enough to wade and the far bank is a long way off. Both of those are why the reeds are worth watching.</p>\n<p>Anyone crossing may look at the banks first, against a difficulty of 14. Anyone hurrying across instead is keeping their footing against 9, and the streambed counts as difficult ground under <a href=\"../../demo/build/book.html#rule-movement\" data-rule-id=\"movement\" class=\"external-ref\">Movement</a> — each tile entered costs 2.</p>\n<p>Whichever way it ends, it ends at <a href=\"#rule-the-far-bank\" data-rule-id=\"the-far-bank\">The Far Bank</a>.</p>",
+    "tags": [
+      "encounter"
+    ],
+    "related": [
+      "the-far-bank"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-the-crossing",
+    "external": [
+      "movement"
+    ]
+  },
+  "the-far-bank": {
+    "id": "the-far-bank",
     "kind": "encounter",
     "title": "The Far Bank",
     "summary": "Wet, short of arrows, and a long way from anywhere to dry out.",
@@ -17,10 +36,10 @@
       "encounter"
     ],
     "related": [
-      "river-crossing"
+      "the-crossing"
     ],
     "includes": [],
-    "book_anchor": "#rule-aftermath"
+    "book_anchor": "#rule-the-far-bank"
   },
   "goblin-captain": {
     "id": "goblin-captain",
@@ -54,25 +73,6 @@
       "movement"
     ]
   },
-  "river-crossing": {
-    "id": "river-crossing",
-    "kind": "encounter",
-    "title": "The Crossing",
-    "summary": "A wide ford, watched from the reeds by people who chose it first.",
-    "summary_html": "A wide ford, watched from the reeds by people who chose it first.",
-    "html": "<p>The water is slow and shallow enough to wade and the far bank is a long way off. Both of those are why the reeds are worth watching.</p>\n<p>Anyone crossing may look at the banks first, against a difficulty of 14. Anyone hurrying across instead is keeping their footing against 9, and the streambed counts as difficult ground under <a href=\"../../demo/build/book.html#rule-movement\" data-rule-id=\"movement\" class=\"external-ref\">Movement</a> — each tile entered costs 2.</p>\n<p>Whichever way it ends, it ends at <a href=\"#rule-aftermath\" data-rule-id=\"aftermath\">The Far Bank</a>.</p>",
-    "tags": [
-      "encounter"
-    ],
-    "related": [
-      "aftermath"
-    ],
-    "includes": [],
-    "book_anchor": "#rule-river-crossing",
-    "external": [
-      "movement"
-    ]
-  },
   "ch-encounters": {
     "id": "ch-encounters",
     "kind": "section",
@@ -83,8 +83,8 @@
     "tags": [],
     "related": [],
     "includes": [
-      "river-crossing",
-      "aftermath"
+      "the-crossing",
+      "the-far-bank"
     ],
     "book_anchor": "#rule-ch-encounters"
   },

@@ -17,5 +17,5 @@ tell a reader there was something here to miss, which is the opposite of
 what an audience is for. Look at `build/handout.html`: this document has
 no entry in the contents and no anchor in the body.
 
-The scouts in [[river-crossing]] are meant to be seen a moment too late
+The scouts in [[the-crossing]] are meant to be seen a moment too late
 rather than never; if the party has spotted them, let them see them.

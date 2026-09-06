@@ -46,6 +46,8 @@ kinds:
     data: [mechanics]
     discovery: lookup
     audience: gm-only        # the whole body carries this audience
+  adventure:
+    id_from: directory       # stem (default) | directory
 ```
 
 | Field | Default | Means |
@@ -55,6 +57,7 @@ kinds:
 | `discovery` | `link` | How a reader is expected to *find* it. Only `link` kinds are warned about when nothing links to them: an `include` document is book structure, and a `lookup` document is found in an index — which is exactly why a bestiary creature was exempt before this was declarable |
 | `audience` | none | An audience tag carried by the whole body. A target that drops that tag does not render the document **at all**, rather than rendering it empty: a heading with nothing under it tells a reader there was something here to miss |
 | `refs` | none | Dotted paths inside this kind's blocks that hold document ids. `*` walks every entry of a list or map. Each id must resolve, the same way a `[[link]]` must |
+| `id_from` | `stem` | Which part of the path the id must equal. `directory` is for a corpus that files one document per directory — an adventure whose overview is always `adventure.md`, beside its scenes and its maps. Either way the id is derivable from where the document sits, so a file cannot be renamed without its links noticing |
 
 The toolset owns `id`, `title`, `kind`, `summary`, `tags` and
 `based_on`. Everything else in frontmatter has to be a declared block.
@@ -162,6 +165,13 @@ conservative answer rather than a surprise. Losing content from a book
 is the failure that matters there, so books keep; leaking a design note
 into a tooltip or a secret into a handout is the failure that matters
 there, so snippets and handouts drop.
+
+The `data` shape needs no `default` and keeps by default. It carries no
+prose, so no tag can leak through it; what an audience still reaches
+there is a **kind's** default audience, and dropping those would quietly
+leave every GM-only NPC out of the file the engine loads. A consumer
+that genuinely wants a player-facing data file says
+`audiences: { default: drop }` and means it.
 
 The default is three targets — `book`, `snippets` and `mechanics` —
 writing the three files a ruleset has always written.
@@ -379,6 +389,10 @@ a time passes the path instead. Where an output goes is the driver's
 business — templating a path would be this toolset holding an opinion
 about how a consumer lays out its build directory.
 
+Its `root` argument overrides where a book starts, and is ignored by the
+other shapes rather than refused, so a driver can loop over every target
+of a corpus without knowing which of them is a book.
+
 `compile_docs(*dirs, root_id=...)` keeps its old signature and its
 `(docs, compiled, errors)` return.
 
@@ -408,9 +422,9 @@ corpus every day need not spell out where it is every day.
 
 `rules/demo-supplement/` is a corpus that is not a ruleset and not a
 game: four kinds of its own, two audience tags, four targets over three
-shapes, a second data block called `setup`, `based_on` between two
-documents, `refs` on a frontmatter field, and a reference into `demo`'s
-build outputs.
+shapes, a second data block called `setup`, a kind that takes its id
+from its directory, `based_on` between two documents, `refs` on a
+frontmatter field, and a reference into `demo`'s build outputs.
 
 ```bash
 python3 tools/build.py demo              # the supplement reads demo's build

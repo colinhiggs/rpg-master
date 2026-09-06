@@ -314,14 +314,19 @@ def build_data(corpus, target, out_path: Path):
 SHAPES = {"book": build_book, "snippets": build_snippets, "data": build_data}
 
 
-def build_target(corpus, name: str, out_path=None, base_dir=None, **kwargs):
+def build_target(corpus, name: str, out_path=None, base_dir=None, root: str = None):
     """Write one target of a corpus.
 
     `out_path` defaults to the target's declared `output`, resolved
     against `base_dir`. A driver that builds one adventure at a time
     passes the path instead: where an output goes is the driver's
     business, and templating a path would be this toolset holding an
-    opinion about how a consumer lays out its build directory."""
+    opinion about how a consumer lays out its build directory.
+
+    `root` overrides where a book starts. It is meaningful only to the
+    book shape and is ignored by the others rather than refused, so a
+    driver looping over every target of a corpus does not have to know
+    which of them is a book."""
     target = corpus.profile.target(name)
     if out_path is None:
         if not target.output:
@@ -331,4 +336,6 @@ def build_target(corpus, name: str, out_path=None, base_dir=None, **kwargs):
         out_path = Path(base_dir or ".") / target.output
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    return SHAPES[target.shape](corpus, target, out_path, **kwargs)
+    if target.shape == "book":
+        return build_book(corpus, target, out_path, root=root)
+    return SHAPES[target.shape](corpus, target, out_path)

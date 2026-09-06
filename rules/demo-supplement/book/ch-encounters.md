@@ -11,6 +11,6 @@ than in a separate file. Compare `build/book.html` with
 `build/handout.html` to see what that costs a reader who is not running
 the game.
 
-{% include river-crossing %}
+{% include the-crossing %}
 
-{% include aftermath %}
+{% include the-far-bank %}
