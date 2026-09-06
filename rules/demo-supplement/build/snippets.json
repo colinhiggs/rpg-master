@@ -1,0 +1,108 @@
+{
+  "_references": [
+    {
+      "name": "demo",
+      "version": null,
+      "source": "../demo/build"
+    }
+  ],
+  "aftermath": {
+    "id": "aftermath",
+    "kind": "encounter",
+    "title": "The Far Bank",
+    "summary": "Wet, short of arrows, and a long way from anywhere to dry out.",
+    "summary_html": "Wet, short of arrows, and a long way from anywhere to dry out.",
+    "html": "<p>Whoever is still standing is on the far bank, and whatever they were carrying has been in the river.</p>",
+    "tags": [
+      "encounter"
+    ],
+    "related": [
+      "river-crossing"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-aftermath"
+  },
+  "goblin-captain": {
+    "id": "goblin-captain",
+    "kind": "foe",
+    "title": "Captain",
+    "summary": "The one that has to die before the rest of them will run.",
+    "summary_html": "The one that has to die before the rest of them will run.",
+    "html": "<p>A captain is a scout that has survived long enough to take something better off somebody. It keeps the scout's reflexes and loses the scout's willingness to leave.</p>\n<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Threat</td><td>4</td></tr><tr><td>Attack</td><td>5</td></tr><tr><td>Hit points</td><td>13</td></tr><tr><td>Speed tiles</td><td>7</td></tr></tbody></table>\n<p>Its attack of 5 is inherited rather than declared — this document's frontmatter says nothing about it, and changing the scout changes it here. Its shield, sword replace the scout's outright, because a list is a statement about a whole set: a captain carrying a shield and a sword is not also still carrying a sling.</p>",
+    "tags": [
+      "foe"
+    ],
+    "related": [],
+    "includes": [],
+    "book_anchor": "#rule-goblin-captain",
+    "based_on": "goblin-scout"
+  },
+  "goblin-scout": {
+    "id": "goblin-scout",
+    "kind": "foe",
+    "title": "Scout",
+    "summary": "Fast, cowardly, and there to be seen a moment too late.",
+    "summary_html": "Fast, cowardly, and there to be seen a moment too late.",
+    "html": "<p>A scout is the cheapest thing that can still make a crossing expensive. It carries sling, knife and no armour worth the name.</p>\n<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Threat</td><td>2</td></tr><tr><td>Attack</td><td>5</td></tr><tr><td>Hit points</td><td>6</td></tr><tr><td>Speed tiles</td><td>7</td></tr></tbody></table>\n<p>It moves 7 tiles, which is further than the 4 tiles a character gets under <a href=\"../../demo/build/book.html#rule-movement\" data-rule-id=\"movement\" class=\"external-ref\">Movement</a> — so a scout that decides to leave has left.</p>",
+    "tags": [
+      "foe"
+    ],
+    "related": [],
+    "includes": [],
+    "book_anchor": "#rule-goblin-scout",
+    "external": [
+      "movement"
+    ]
+  },
+  "river-crossing": {
+    "id": "river-crossing",
+    "kind": "encounter",
+    "title": "The Crossing",
+    "summary": "A wide ford, watched from the reeds by people who chose it first.",
+    "summary_html": "A wide ford, watched from the reeds by people who chose it first.",
+    "html": "<p>The water is slow and shallow enough to wade and the far bank is a long way off. Both of those are why the reeds are worth watching.</p>\n<p>Anyone crossing may look at the banks first, against a difficulty of 14. Anyone hurrying across instead is keeping their footing against 9, and the streambed counts as difficult ground under <a href=\"../../demo/build/book.html#rule-movement\" data-rule-id=\"movement\" class=\"external-ref\">Movement</a> — each tile entered costs 2.</p>\n<p>Whichever way it ends, it ends at <a href=\"#rule-aftermath\" data-rule-id=\"aftermath\">The Far Bank</a>.</p>",
+    "tags": [
+      "encounter"
+    ],
+    "related": [
+      "aftermath"
+    ],
+    "includes": [],
+    "book_anchor": "#rule-river-crossing",
+    "external": [
+      "movement"
+    ]
+  },
+  "ch-encounters": {
+    "id": "ch-encounters",
+    "kind": "section",
+    "title": "The encounters",
+    "summary": "Two, in order, with a fight in the middle of the first.",
+    "summary_html": "Two, in order, with a fight in the middle of the first.",
+    "html": "<p>Both encounters are written the same way: player-facing prose in the body, and anything the referee needs kept behind an audience tag rather than in a separate file. Compare <code>build/book.html</code> with <code>build/handout.html</code> to see what that costs a reader who is not running the game.</p>",
+    "tags": [],
+    "related": [],
+    "includes": [
+      "river-crossing",
+      "aftermath"
+    ],
+    "book_anchor": "#rule-ch-encounters"
+  },
+  "supplement": {
+    "id": "supplement",
+    "kind": "section",
+    "title": "The Ford — a demonstration supplement",
+    "summary": "A two-encounter supplement, built on the demo ruleset.",
+    "summary_html": "A two-encounter supplement, built on the demo ruleset.",
+    "html": "<p>This is a supplement rather than a ruleset: it adds no rules of its own and instead uses somebody else's, which it reaches by reference rather than by copying. Every value it quotes from the demo rules is interpolated out of that corpus's build outputs, so this document cannot drift from rules it does not own.</p>\n<p>Read it as a worked example of the corpus profile beside it. What each part is demonstrating is said in a design note under it, and design notes are kept out of the in-game snippets by the same mechanism that keeps GM material out of the players' handout.</p>\n<h4>The opposition</h4>",
+    "tags": [],
+    "related": [],
+    "includes": [
+      "ch-encounters",
+      "goblin-scout",
+      "goblin-captain",
+      "gm-notes"
+    ],
+    "book_anchor": "#rule-supplement"
+  }
+}

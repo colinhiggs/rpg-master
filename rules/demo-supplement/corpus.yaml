@@ -1,0 +1,91 @@
+# A supplement: a corpus built on another corpus.
+#
+# `demo` is the toolset's worked example of a RULESET. This is the
+# worked example of everything a ruleset does not need and a second kind
+# of corpus does: kinds of its own, more than one audience, more than
+# one data block, more than three outputs, documents that inherit from
+# each other, frontmatter that names other documents, and references
+# reaching into another corpus entirely.
+#
+# It is deliberately not a game. A supplement is a publishing idea, the
+# same way a rulebook is, which is what keeps it inside the rule that
+# keeps this toolset shareable: nothing in rules-toolset/ may know about
+# any particular game, so its fixtures must not be one.
+#
+# Build it with:  python3 tools/build.py demo-supplement
+# (Build demo first -- this corpus reads demo's build outputs.)
+
+# --- Document kinds -------------------------------------------------
+# Four kinds, none of which the toolset has heard of. `data` names the
+# frontmatter blocks each may carry; `refs` names the paths inside those
+# blocks that hold document ids, which are then checked like any link.
+kinds:
+  section:
+    summary: optional
+    data: []
+    discovery: include
+  encounter:
+    data: [setup]
+    discovery: include
+    refs: [setup.foes, setup.leads_to]
+  foe:
+    data: [mechanics]
+    discovery: lookup
+  note:
+    summary: optional
+    data: []
+    discovery: lookup
+    # The whole body of a note is for the GM. Saying it here is what
+    # saves every note file from wrapping itself in the tag, and it is
+    # why a note is absent from the handout below rather than present
+    # and empty.
+    audience: gm-only
+
+# --- Audience tags --------------------------------------------------
+audiences: [book-only, gm-only]
+
+roots: [supplement]
+
+# --- References -----------------------------------------------------
+# Another corpus, joined to this one's id namespace. Only its build
+# outputs are read, never its sources: what a consumer may depend on is
+# what the producing project publishes. `href` says where that corpus is
+# published relative to this corpus's own output, so a link out of here
+# lands somewhere.
+#
+# Building this corpus warns that `demo` carries no version, and that is
+# the check working rather than a defect: an unversioned dependency is
+# one nothing built here can record having been built against.
+references:
+  - path: ../demo/build
+    href: "../../demo/build/book.html#rule-{id}"
+
+# --- Outputs --------------------------------------------------------
+# Four targets over three shapes. `handout` and `book` are the same
+# shape with different answers about who is reading.
+targets:
+  book:
+    shape: book
+    root: supplement
+    audiences: { default: keep }
+    output: build/book.html
+  handout:
+    shape: book
+    root: supplement
+    # Foes and notes are not in a handout at all. The kinds are filtered
+    # out here; a note would also have been dropped by its kind's own
+    # audience, which is the belt to this braces.
+    select: { kind: [section, encounter] }
+    audiences: { default: drop }
+    output: build/handout.html
+  snippets:
+    shape: snippets
+    audiences: { default: drop }
+    output: build/snippets.json
+  data:
+    shape: data
+    # More than one block, so the output names them and says `_blocks`.
+    # A single-block corpus writes the block straight in, which is what
+    # mechanics.json has always looked like.
+    blocks: [mechanics, setup]
+    output: build/data.json

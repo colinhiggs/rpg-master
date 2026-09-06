@@ -1,296 +1,242 @@
 # Corpora, profiles and targets
 
-**Status: proposed. Nothing described here is built.** This document is
-the shape being agreed before the code is written, per `SHARING.md` —
-the adventures project's driver is written against exactly this, so it
-is cheaper to agree it once than to follow it. When it lands, this
-banner goes and this file becomes the reference.
+A **corpus** is a directory of documents this toolset compiles. A
+ruleset is one shape of corpus; an adventure is another.
 
-## The one idea
+Six things used to be constants in this toolset's own source: which
+document kinds exist, which audience tag could be stripped, what a data
+block was called, where the book was rooted, what the linter checked,
+and which three files came out. Every one of those is a property of the
+corpus being compiled rather than of the compiler, and a corpus that is
+not a ruleset answers all six differently.
 
-Today the toolset compiles a **ruleset**: a directory whose documents
-have three possible `kind`s, one audience tag, one data block called
-`mechanics`, one book root called `rulebook`, and three output files.
-Every one of those is a constant in the toolset's own source.
+So a corpus declares them, in `<corpus>/corpus.yaml`, and the compiler
+validates against the declaration instead of against its own literals.
 
-The proposal is that all six become a **corpus profile** — a
-declaration a corpus makes about itself, which the toolset validates
-against instead of against its own literals. A ruleset is then one
-corpus profile among others, and the one a corpus gets when it declares
-nothing is exactly today's behaviour.
+**A corpus that declares nothing gets exactly the behaviour this toolset
+had before profiles existed.** That is not a stated intention but a
+measured one: `demo` and `ico` build byte-identical `book.html`,
+`snippets.json` and `mechanics.json` with the profile mechanism in place
+and with `demo` declaring the default profile explicitly, and the test
+suite checks the claim from both ends.
 
-That last clause is the whole safety argument. `demo` and `ico` declare
-nothing, get the default profile, and compile byte-for-byte identically
-— which is a testable claim, not an intention, and the test is in the
-plan at the bottom.
+`rules/demo/corpus.yaml` is the default profile written out — a file
+that changes nothing, kept because a format is easier to judge against
+behaviour you already know. `rules/demo-supplement/` is the worked
+example of a corpus that is not a ruleset.
 
-## Where a profile lives
+---
 
-`<corpus>/corpus.yaml`, optional. Absent means the default profile.
+## `corpus.yaml`
 
-The toolset reads it into a `Profile` object; a driver may also build
-one directly and pass it in, which is what makes the adventures-side
-compiler a configuration file plus a `main()` rather than a second
-parser. The file is the ergonomic form of the object, not a separate
-mechanism.
+Every field has a default, so a corpus declares only what differs.
 
-## The default profile
-
-This is what `demo` and `ico` get today, written out in the new
-vocabulary. It is here so the format can be judged against behaviour
-that already exists rather than against behaviour nobody has seen.
+### `kinds`
 
 ```yaml
 kinds:
-  rule:     { summary: required, data: [mechanics], discovery: link }
-  section:  { summary: optional, data: [mechanics], discovery: include }
-  creature: { summary: required, data: [mechanics], discovery: lookup }
+  scene:
+    summary: required        # required | optional
+    data: [encounter]        # the frontmatter blocks this kind may carry
+    discovery: include       # link | include | lookup
+    refs:                    # paths inside those blocks holding document ids
+      - encounter.foes
+      - encounter.branches.*.to
+  npc:
+    data: [mechanics]
+    discovery: lookup
+    audience: gm-only        # the whole body carries this audience
+```
 
-audiences: [book-only]
+| Field | Default | Means |
+|---|---|---|
+| `summary` | `required` | Whether a document of this kind must carry a summary. Optional also exempts it from the tooltip length warning — it is scaffolding, not tooltip text |
+| `data` | `[mechanics]` | Which frontmatter blocks documents of this kind may carry. `[]` for none. A key that is neither a toolset field nor a declared block is an error rather than a field silently ignored |
+| `discovery` | `link` | How a reader is expected to *find* it. Only `link` kinds are warned about when nothing links to them: an `include` document is book structure, and a `lookup` document is found in an index — which is exactly why a bestiary creature was exempt before this was declarable |
+| `audience` | none | An audience tag carried by the whole body. A target that drops that tag does not render the document **at all**, rather than rendering it empty: a heading with nothing under it tells a reader there was something here to miss |
+| `refs` | none | Dotted paths inside this kind's blocks that hold document ids. `*` walks every entry of a list or map. Each id must resolve, the same way a `[[link]]` must |
 
+The toolset owns `id`, `title`, `kind`, `summary`, `tags` and
+`based_on`. Everything else in frontmatter has to be a declared block.
+
+The default is three kinds: `rule` (link), `section` (include, summary
+optional) and `creature` (lookup).
+
+### `audiences`
+
+```yaml
+audiences: [book-only, gm-only]
+```
+
+Declaring a tag is what makes `{% tag %}…{% endtag %}` mean anything.
+The default is `[book-only]`.
+
+Blocks must be closed, must not nest inside themselves, and must not
+overlap one another — `{% a %}{% b %}{% enda %}{% endb %}` leaves each
+tag individually balanced while making both spans meaningless, so it is
+an error too.
+
+**A `{% directive %}` the corpus does not understand is a build error.**
+Before, an undeclared tag passed through into the output as literal
+text, which is the worse failure: content the tag was meant to hide gets
+published, and the only evidence is a stray marker mid-paragraph.
+
+### `roots`
+
+```yaml
 roots: [rulebook]
-
-targets:
-  book:
-    shape: book
-    root: rulebook
-    audiences: { default: keep }
-    output: build/book.html
-  snippets:
-    shape: snippets
-    audiences: { default: drop }
-    output: build/snippets.json
-  mechanics:
-    shape: data
-    blocks: [mechanics]
-    output: build/mechanics.json
 ```
 
-Every field has a default, so a corpus declares only what differs. A
-`corpus.yaml` containing only `audiences: [book-only, spoiler]` keeps
-all three kinds, the root and the three targets.
+Where a book starts, and what reachability is measured from. Several are
+allowed. `roots: []` means this corpus has no book, and the reachability
+checks are then **skipped** rather than reported as a missing root —
+those are different situations and only the second is worth saying
+anything about. The default is `[rulebook]`.
 
-## 1. Kinds
-
-`KINDS = ("rule", "section", "creature")` at `rulesc.py:65` becomes the
-`kinds:` map above. Three properties, each of which exists because the
-current code already branches on kind somewhere:
-
-| Property | Values | Default | What consults it today |
-|---|---|---|---|
-| `summary` | `required`, `optional` | `required` | `rulesc.py:125`, and `lint.check_summary_length` skips sections |
-| `data` | list of block names | `[mechanics]` | see below |
-| `discovery` | `link`, `include`, `lookup` | `link` | `lint.check_link_orphans` (`lint.py:168`) |
-
-`discovery` says how a reader is expected to *find* a document, and it
-is the generic form of the exemptions already hardcoded in the linter.
-A `link` document is found by cross-reference, so nothing linking to it
-is worth a warning. An `include` document is book structure, reached by
-`{% include %}`. A `lookup` document is found in an index — which is
-exactly the comment already sitting above `check_link_orphans`
-explaining why creatures are exempt: "a bestiary entry is found by
-looking in the bestiary".
-
-So `kind: npc` stops being a fatal error, and an npc is `lookup` for
-the same reason a creature is.
-
-## 2. Data blocks, and my answer on `encounter:`
-
-**You asked whether the answer is "adventures should call it
-`mechanics:`". I think it is not, and that declared block names are
-both the more correct and the cheaper answer.**
-
-The model: a document carries a *map of named data blocks* rather than
-one block called `mechanics`. Today every document has exactly one,
-named `mechanics`, which is why the name is invisible. A kind declares
-which blocks its documents may carry:
+### `lint`
 
 ```yaml
-kinds:
-  npc:   { data: [mechanics] }
-  scene: { data: [encounter] }
+lint:
+  unincluded: off
+  orphans: off
 ```
 
-The first segment of an interpolation path already names the block —
-`{{ mechanics.grid_size }}` — so `{{ encounter.checks.spot-ambush.dc }}`
-needs no new syntax, only a lookup that does not assume the name. The
-same is true of `{% table encounter.checks columns=skill,dc %}`.
+Switches off an optional check: `unexplained`, `unincluded`,
+`duplicate-includes`, `orphans`, `summary-length`, `mechanics-naming`.
+All are on by default.
 
-Three reasons to prefer this over renaming on the adventures side:
+`check_hardcoded_numbers` is not in that list and cannot be switched
+off. A corpus that could turn it off would be a corpus where the prose
+and the data are allowed to disagree, which is the one thing this format
+exists to prevent. It applies to **every** declared block, so a
+difficulty sitting in an `encounter` block drifts from the prose beside
+it exactly as readily as a die size in a rule.
 
-- **`mechanics` means something.** In a rule document it is "the
-  numbers this rule *is*" — the values `sim/` measures and the server
-  runs on. A scene's `encounter:` is a structure of references and
-  thresholds. Putting both under one key would make `mechanics.json`
-  claim that an encounter is a game constant, and would make
-  `based_on` (item 6) inherit encounters, which is meaningless.
-- **It is what makes item 4 work at all.** `check_hardcoded_numbers`
-  flattens `doc.mechanics` and compares against prose. Point it at
-  every declared block instead and `dc: 14` beside "DC 14" in the ford
-  scene becomes the hard error you want. Renaming the block to
-  `mechanics` would also achieve that, but only by conceding the point
-  above.
-- **It costs one line per kind.** The toolset learns "blocks have
-  names", not "there is a block called encounter".
-
-Two details this needs, both small:
-
-- **Lists in a path.** `checks:` is a list of maps. `_lookup_path`
-  gains index support so `encounter.checks.0.dc` resolves, and — because
-  each check carries an `id:` — so does `encounter.checks.spot-ambush.dc`.
-  I recommend authoring with the id form and would make the positional
-  form work only because it falls out for free: inserting a check at the
-  front of the list must not silently repoint every interpolation in the
-  prose. Addressing a list of maps by each element's `id` is the same
-  convention the toolset already uses for documents themselves.
-  `lint.check_hardcoded_numbers` walks into lists for the same reason.
-- **`doc.mechanics` stays.** As a property returning
-  `doc.data.get("mechanics", {})`, so `build_mechanics`, the linter,
-  `sim/`, and every existing test keep working unchanged.
-
-An undeclared block in frontmatter becomes an error rather than being
-silently ignored, which it is today. That catches `mechanic:` for
-`mechanics:`.
-
-## 3. Audiences and targets — one mechanism, parameterised
-
-This is the item `SHARING.md` already names, and the one you asked to
-see before code. Today there is one tag with its name written into four
-places: the two regexes at `rulesc.py:62-63`, the validator that knows
-its name (`check_book_only_markers`, `rulesc.py:197`), and the strip and
-unwrap functions (`rulesc.py:230, 235`). The two "targets" are implied
-by which of the two functions the caller happens to call.
-
-**A corpus declares its audience tags. A target declares what it does
-with each of them.**
+### `references`
 
 ```yaml
-audiences: [gm-only]
+references:
+  - path: ../../rules-ico/build
+    href: "../rules-ico/build/book.html#rule-{id}"
+    name: rules-ico          # optional; defaults to the directory's name
+```
 
+See [References into another corpus](#references-into-another-corpus).
+
+### `targets`
+
+A target is a document filter, an audience policy and an output shape.
+
+```yaml
 targets:
   gm-module:
     shape: book
+    root: adventure-ambush-at-the-ford
     audiences: { default: keep }
+    output: build/gm-module.html
   player-handout:
     shape: book
-    select: { kind: [handout, scene] }
+    root: adventure-ambush-at-the-ford
+    select: { kind: [section, scene, handout] }
     audiences: { default: drop }
+    css: "body { font: 11pt/1.4 Georgia, serif; }"
+  engine-data:
+    shape: data
+    blocks: [mechanics, encounter]
 ```
 
-An action is `keep` (drop the markers, keep the content — today's
-`unwrap_book_only`) or `drop` (remove the block entirely — today's
-`strip_book_only`).
+| Field | Applies to | Means |
+|---|---|---|
+| `shape` | all | `book`, `snippets` or `data`. Not extensible from a profile: a new shape is Python, and is a change to the interface |
+| `audiences` | all | `{ default: keep\|drop }`, plus per-tag overrides |
+| `select` | all | `{ kind: [...] }` and `{ tags: [...] }`. Kind and tag are toolset vocabulary; a folder name is not |
+| `output` | all | Where `build.py` writes it, relative to the corpus. A driver passing its own path does not need it |
+| `root` | `book` | The document the book starts at. Falls back to the first of `roots` |
+| `css` | `book` | Replaces the built-in stylesheet. This is what makes a printable booklet a parameter rather than a fourth shape |
+| `blocks` | `data` | Which data blocks to emit. Default `[mechanics]` |
 
-Four decisions inside that, each with a reason:
+**`default` is required** on anything carrying prose. Not "unlisted tags
+are kept" and not "unlisted tags are dropped": each target picks its own
+safe direction, so an audience tag added a year from now gets the
+conservative answer rather than a surprise. Losing content from a book
+is the failure that matters there, so books keep; leaking a design note
+into a tooltip or a secret into a handout is the failure that matters
+there, so snippets and handouts drop.
 
-**`default:` is required on every target, and per-tag overrides are
-optional.** Not "unlisted tags are kept" and not "unlisted tags are
-dropped": each target picks its own safe direction. `snippets` defaults
-to `drop`, so a tag added later cannot leak a design note into a
-tooltip. `player-handout` defaults to `drop`, so a tag added later
-cannot leak a secret to a player. `book` and `gm-module` default to
-`keep`, because losing content there is the failure that matters. The
-declaration is two lines and it means an author who forgets a tag gets
-the conservative answer rather than a surprise.
+The default is three targets — `book`, `snippets` and `mechanics` —
+writing the three files a ruleset has always written.
 
-**An unrecognised `{% word %}` becomes a build error.** You noted that
-`{% gm-only %}` currently passes through as literal text, which is
-worse than an error, and I agree — it is the same failure the whole
-format exists to prevent, in a different costume. The check is: any
-`{% ... %}` whose first word is not `include`, not `table`, and not a
-declared audience tag or its `end` form is an error naming the document
-and the word. I verified this is safe to add to both existing rulesets:
-across all 54 documents in `demo` and `ico` exactly four directive
-words occur — `include` (52), `book-only` (41), `endbook-only` (41) and
-`table` (19). Nothing else exists to break.
+---
 
-**Same-tag nesting stays an error; different-tag nesting is allowed.**
-`{% gm-only %}` inside `{% book-only %}` is meaningful and falls out of
-the regex correctly provided drops are applied before keeps, which is
-well defined and which I would state in a test rather than leave to
-luck. Nesting a tag inside itself remains what it is today: an error,
-because the close is ambiguous. The unclosed and stray-close checks
-generalise per tag with no change of meaning.
+## Data blocks
 
-**A kind may carry a default audience.** This is the generic form of
-your folder conventions, and I think it belongs in the toolset:
+A document carries a map of named blocks. A ruleset document has exactly
+one, called `mechanics`, which is why the name used to be invisible.
+
+The first segment of an interpolation path names the block, so nothing
+about the syntax changes:
+
+```
+{{ mechanics.base_move_tiles }}          this document's `mechanics`
+{{ encounter.difficulty }}               this document's `encounter`
+{{ goblin:mechanics.typical_number }}    another document's
+{% table encounter.checks columns=skill,difficulty %}
+```
+
+Lists are addressed **by an entry's own `id`**, and by position if it
+has none:
 
 ```yaml
-kinds:
-  npc:  { discovery: lookup, audience: gm-only }
-  note: { summary: optional, audience: gm-only }
+encounter:
+  checks:
+    - id: spot-the-ford
+      difficulty: 14
 ```
 
-meaning the whole body of such a document behaves as if wrapped in that
-tag. It is stated in toolset vocabulary — a kind, an audience — and any
-ruleset could use it (a supplement might make every `errata` document
-`book-only`). Without it, every NPC file needs a wrapper around its
-whole body, which is exactly the per-file tagging your README says is
-not needed.
+```
+{{ encounter.checks.spot-the-ford.difficulty }}    prefer this
+{{ encounter.checks.0.difficulty }}                works, but
+```
 
-Note what it does *not* do: it does not make the folder meaningful. The
-document says `kind: npc` in its frontmatter and happens to live in
-`npcs/`. Deriving a document's kind from its location would make a
-file's meaning depend on where it sits, and the flat id namespace is a
-deliberate rejection of exactly that.
+Prefer the id form when writing prose: inserting a check at the top of
+the list must not silently repoint every number in the paragraph below
+it. The positional form exists because it costs nothing and a list of
+plain values has no other handle.
 
-## 4. Build targets — three shapes, parameterised
+`doc.mechanics` is still there in the API, meaning `doc.data["mechanics"]`
+— for a ruleset that is still the whole answer.
 
-`build.py` writes exactly three files from three hardcoded calls.
-Targets become the `targets:` map above; `build.py` runs whichever the
-profile declares.
+---
 
-The result I want to lead with, because it settles the `SHARING.md`
-question about the interface: **your four targets need no new output
-shape.** There are three shapes and they are the three that exist.
+## Inheritance: `based_on`
 
-| Your target | Shape | Parameters |
-|---|---|---|
-| `gm-module` | `book` | `audiences: { default: keep }` |
-| `player-handout` | `book` | `select: { kind: [handout, scene] }`, `default: drop` |
-| `player-booklet` | `book` | same selection, plus `css:` |
-| `engine-data` | `data` | `blocks: [mechanics, encounter]` |
+```yaml
+id: npc-grask
+based_on: goblin
+mechanics:
+  stamina: 8
+  disciplines: { martial: 1 }
+```
 
-A target is exactly what you described — a document filter, an audience
-policy, and an output shape — plus the shape's own parameters:
+Scalars replace wholesale. Nested maps merge key by key. Lists replace
+wholesale — a list is a statement about a whole set, and merging would
+make it impossible to take anything away, which is most of what a
+variant is for. Blocks merge by name, so a parent's `mechanics` merges
+into the child's `mechanics` and nothing else.
 
-- **`shape`** — `book`, `snippets` or `data`. Not extensible from a
-  profile: a new shape is Python, and is a change to the interface that
-  gets agreed the way this document is being agreed.
-- **`select`** — `{ kind: [...] }` and `{ tags: [...] }`. Kind and tag
-  are toolset vocabulary; "the `handouts/` folder" is not, and does not
-  need to be, because a handout says `kind: handout`.
-- **`audiences`** — as above.
-- **shape parameters** — `root:` and `css:` for `book`, `blocks:` for
-  `data`. `BOOK_CSS` becomes the default value of `css:` rather than a
-  module constant, which is what makes `player-booklet` a parameter
-  rather than a fourth shape.
+**It resolves before anything reads the data** — before lint, before
+interpolation — and that ordering is the point: a document whose prose
+restates a value it *inherited* is exactly the drift this format exists
+to catch, and it is invisible to a check that only sees the keys the
+document declared for itself.
 
-**What changes in the three existing shapes: nothing.** `build_book`,
-`build_snippets` and `build_mechanics` keep their bodies. What changes
-is that their arguments come from a profile instead of from three
-hardcoded calls, and the default profile supplies today's values. So
-this item is additive and there is no collision to describe — which was
-the other answer you asked for if I found one.
+A `based_on` naming a document that does not exist is an error, and so
+is a cycle. It resolves across a reference, so an NPC can be based on a
+creature in a ruleset's bestiary.
 
-One internal shape does change, and it is worth naming because
-`test_rules.py` touches it. Today `compiled[id]` holds two
-pre-rendered forms, `linked` (unwrapped) and `html` (stripped),
-because there were exactly two audience policies. With N targets they
-cannot be precomputed, so `compiled[id]` holds the marked-up text once
-and each target applies its own policy. That is the compiler's internal
-structure, not an output shape, and no consumer outside `tools/` reads
-it.
+---
 
-## 5. References into another corpus
-
-The third thing you asked to see before code. `[[goblin]]` and
-`[[skill-list]]` in an adventure name documents in the ruleset, and
-`resolve_links` (`rulesc.py:545`) and `resolve_interpolations`
-(`rulesc.py:308`) both resolve within one `docs` dict.
-
-**A corpus may declare other corpora that join its id namespace,
-loaded from their build outputs.**
+## References into another corpus
 
 ```yaml
 references:
@@ -298,259 +244,184 @@ references:
     href: "../rules-ico/build/book.html#rule-{id}"
 ```
 
-The toolset reads `snippets.json` and `mechanics.json` from that
-directory into read-only documents — id, title, kind, summary and data
-blocks — and adds them to the same namespace the local documents are
-in. Which means:
+The toolset reads that directory's `snippets.json` and `mechanics.json`
+and adds their documents to **the same flat id namespace** as the local
+ones. Only build outputs are read, never that corpus's sources: what a
+consumer may depend on is what the producing project publishes, and
+reading its `rules/*.md` would be depending on how it is written rather
+than on what it ships.
 
-- `[[goblin]]`, `{{ goblin:mechanics.typical_number }}`,
-  `{% table goblin:mechanics.skills %}` and `based_on: goblin` all work
-  with **no new syntax at all**, because none of them ever cared where
-  a document came from.
-- A build output is the only thing read, so an adventure depends on
-  exactly what the rules `SHARING.md` says it may depend on.
+Because the namespace is shared, nothing needs new syntax:
 
-**The namespace is flat and a collision is an error.** I considered
-namespacing (`[[rules:goblin]]`) and rejected it: your real documents
-write `[[skill-list]]` beside `[[npc-grask]]` with no prefix, and the
-toolset's existing rule is already "one flat id namespace, a duplicate
-is an error". Extending that rule across the seam keeps one rule
-instead of two, and it means adding a document to the ruleset whose id
-an adventure already uses fails loudly at the next build instead of
-quietly changing what a link means. The cost is that you cannot
-deliberately shadow a ruleset document, which I think is the right
-thing to be unable to do.
+```markdown
+See [[skill-list]] for how Spot resolves, and note that a band is
+{{ goblin:mechanics.typical_number }} of them.
+```
 
-**Unresolvable is an error.** This already is how it works — a bad
-`[[link]]` or `{{ interpolation }}` appends to `errors`, and `build.py`
-writes no output when `errors` is non-empty — and it extends unchanged.
-A missing or unbuilt reference directory is its own error naming the
-build command that fixes it, in the shape `sim/model.py` already uses
-for `RulesNotBuilt`.
+- **A collision is an error.** An id that exists both here and in a
+  referenced corpus fails the build, naming both. That is the toolset's
+  existing rule — one flat namespace, a duplicate is an error — extended
+  across the seam, and it means adding a document to the ruleset whose
+  id an adventure already uses fails loudly rather than quietly changing
+  what a link means. You cannot deliberately shadow a referenced
+  document, which is the right thing to be unable to do.
+- **An external document is never rendered here.** It can be linked to,
+  read from and inherited from; it does not appear in this corpus's book,
+  snippets or data.
+- **A link out gets the declared `href`**, with `{id}` substituted, and
+  `class="external-ref"`. With no `href` it renders as a span carrying
+  `data-rule-id`, so a client can still resolve it — a dead anchor into
+  a book that does not contain the document would be worse.
+- **An unresolvable reference is an error**, never a silent blank, the
+  same as any broken `[[link]]`.
+- **A missing or unbuilt reference directory** is its own error, naming
+  the build command that fixes it.
 
-**The version lands in the output**, under the `_`-prefixed convention:
+### The version travels into the output
 
 ```json
 "_references": [
-  { "name": "rules-ico", "version": "1.0.4", "source": "rules-ico/build" }
+  { "name": "rules-ico", "version": "1.0.4", "source": "../../rules-ico/build" }
 ]
 ```
 
-in `snippets.json` and in the `data` shape, and as a visible line in the
-book shape's subtitle — a printed GM module should say which rules it
-was built against without going near a repository, which is the same
-argument that put the version in the subtitle to begin with. A
-referenced corpus with no `_version` is a warning and records `null`;
-an unversioned dependency is worth being told about. **A corpus that
-declares no references emits no `_references` key**, which is what keeps
-`demo` and `ico` byte-identical.
+in `snippets.json` and in the `data` shape, under the existing
+convention that a top-level key beginning with `_` is metadata about the
+build rather than a document; and as a visible line in the book shape's
+subtitle, because a printed module should say which rules it holds
+without going near a repository.
 
-## 6. `based_on`
+A referenced corpus carrying no version is a **warning** and records
+`null` — an unversioned dependency is one nothing built here can record
+having been built against. A corpus that declares no references emits no
+`_references` at all, which is part of what keeps existing outputs
+byte-identical.
 
-A document may name another whose data blocks it inherits. The merge is
-what you specified: scalars replace, nested maps merge key-by-key, lists
-replace wholesale. Block by block, by name — the parent's `mechanics`
-merges into the child's `mechanics` — so no extra declaration is needed,
-and inheriting a scene's `encounter` into a creature is not something
-that can happen by accident.
+---
 
-I agree it belongs in the toolset rather than the driver, for the reason
-you gave: a bestiary variant (a dire wolf from a wolf) wants it as much
-as a named boss does. It is stated entirely in documents and data
-blocks, and it is inert — a corpus in which nothing says `based_on` is
-unaffected.
+## The output shapes
 
-Four details:
+Three, and they are the interface between this toolset and everything
+downstream. `SHARING.md` covers who may change them.
 
-- **Resolution happens at load, before lint and before interpolation.**
-  So `{{ mechanics.stamina }}` in Grask's prose interpolates the
-  inherited value, and — more importantly — an NPC whose prose restates
-  a number it *inherited* is caught by `check_hardcoded_numbers`. If
-  inheritance ran later, that drift would be invisible.
-- **The emitted block is the resolved one**, because `engine-data` needs
-  a whole stat block. Nothing in `demo` or `ico` uses `based_on`, so
-  `mechanics.json` is unaffected in both.
-- **A `based_on` naming a document that does not exist is an error**, as
-  you asked. So is a cycle, detected with the same walk the include
-  graph already uses.
-- **It resolves across the seam**, so `based_on: goblin` reaches the
-  ruleset's bestiary through item 5.
+- **`book`** — one HTML document, in include order, with a contents list
+  built from the same order so the two cannot disagree.
+- **`snippets`** — a flat map of document id to short form. A document
+  gains `based_on` and `external` keys only when it has them, so a
+  ruleset's `snippets.json` keeps exactly the shape it always had.
+- **`data`** — the declared blocks, no prose, no HTML.
 
-## 7. Lint against many roots, or none
+The `data` shape has one wrinkle worth knowing. With **one** declared
+block it writes that block's contents straight in, which is what
+`mechanics.json` has always looked like and what every existing reader
+expects. With **several** it writes them under their names and adds
+`_blocks` saying so, so a consumer can tell the two apart without being
+told:
 
-`run_all(docs, root_id="rulebook")` becomes `run_all(docs, profile)`,
-reading `roots:` (a list) and a `lint:` map that switches individual
-checks off.
-
-- `roots: []` **skips** `check_unincluded` and `check_duplicate_includes`
-  rather than reporting a missing root. There is a real difference
-  between "this corpus has no book" and "this corpus has a book and I
-  cannot find its root", and only the second is worth a warning.
-- Several roots: reachability is the union, and duplicate-include counts
-  are per root.
-- `check_hardcoded_numbers` is not switchable and stays a hard error for
-  every corpus. It is the reason the format exists.
-
-For your corpus I expect `roots: []` with `unincluded`,
-`duplicate-includes` and `orphans` off, because an adventure's documents
-are reached through `connections:` and `encounter:` rather than through
-`{% include %}` — a graph, not a tree.
-
-**Which raises the one place I think you are about to write driver code
-that could be configuration instead.** Validating that
-`connections.next` names a scene that exists is, stated generically, "a
-frontmatter path holds a document id; check that it resolves". That is
-expressible without any game in it:
-
-```yaml
-kinds:
-  scene:
-    data: [encounter]
-    refs:
-      - encounter.npcs
-      - encounter.connections.next
-      - encounter.connections.branches.*.to
+```json
+{ "_generated": "...", "_blocks": ["mechanics", "setup"],
+  "rules": { "goblin-captain": { "mechanics": { "threat": 4 } } } }
 ```
 
-I am not counting this as part of what you asked for and I would build
-it last, but it is the single addition that most reduces the driver to a
-configuration file, and it is generic — a bestiary could declare
-`refs: [mechanics.variant_of]`. Say if you want it in scope.
+---
 
-It does **not** cover `on_success: notice-ambush-early`. That names an
-outcome, not a document, and outcomes are the adventure's own schema.
-Checking those belongs in the driver, and I would leave it there.
+## The API
 
-## 8. The import surface
+`rules-toolset/rulesc/` is a package, and `tools/build.py` is a command
+line over it. A second compiler imports the package.
 
-You asked what the supported import looks like from a submodule
-checkout at `rpg-master/rules-toolset/`. The honest first sentence is
-that a directory has to be on `sys.path` before anything in it can be
-imported, and with no network and no install step there is no way around
-that. The question is only whether it is one deliberate line in the
-driver or surgery repeated everywhere.
-
-**The proposal: `rules-toolset/` gains a real package, and `tools/`
-becomes thin command-line wrappers over it.**
-
-```
-rules-toolset/
-  rulesc/
-    __init__.py     the public API, and the only thing a driver imports
-    compile.py      was tools/rulesc.py
-    lint.py         was tools/lint.py
-    profile.py      new — Profile, Kind, Target, parsing corpus.yaml
-    targets.py      new — the three output shapes
-  tools/
-    build.py        CLI over rulesc
-    test_rules.py   CLI over rulesc
-```
-
-and the driver, once, at the top:
+From a project holding this repository as a submodule at `rpg-master/`,
+that is one line of path setup and then an ordinary import:
 
 ```python
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rpg-master" / "rules-toolset"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]
+                       / "rpg-master" / "rules-toolset"))
 
-from rulesc import Profile, compile_corpus, build_target
+from rulesc import Profile, compile_corpus, build_target, lint
 ```
 
-The alternative is to leave the layout alone and have the driver put
-`tools/` on the path, which works today. I recommend against it: it
-drops `build`, `lint` and `test_rules` into the driver's namespace, so
-an adventure compiler cannot have a `build.py` of its own, and it means
-the second compiler imports implementation modules rather than a stated
-API. Now that there are two compilers, that API is a contract and wants
-a surface of its own.
+There is no way around the path line without an install step, and this
+project deliberately has nothing to install. What the package buys is
+that the line is written once and imports a stated API, rather than
+putting `tools/` on the path and pulling `build`, `lint` and
+`test_rules` into the caller's namespace.
 
-**This does move files, which is the one part of the proposal that is
-not purely additive.** `git log --follow` still works, and nothing
-outside `rules-toolset/` imports these modules — `rules_runtime.py` is
-imported by nothing at all, and `sim/` reads only `mechanics.json`. Say
-if you would rather I did not, and I will keep the flat layout and
-document the `tools/` import instead.
-
-The API, in full:
+### Compiling and building
 
 ```python
-profile = Profile.load(corpus_dir)              # corpus.yaml, or the default
-corpus  = compile_corpus(*dirs, profile=profile)
-if corpus.errors: ...                           # .errors .warnings .docs .compiled
-build_target(corpus, "gm-module", out_path)     # one target, one file
+profile = Profile.load(corpus_dir)          # corpus.yaml, or the default
+profile = Profile.from_mapping({...})       # or build one in the driver
+profile = profile.with_roots("adventure-ambush-at-the-ford")
+
+corpus = compile_corpus(scenes_dir, npcs_dir, shared_dir,
+                        profile=profile,
+                        base_dir=corpus_dir,   # what `references` are relative to
+                        version="0.3.0")       # stamped into every output
+
+warnings, errors = lint.run_all(corpus.docs, profile)
+if corpus.errors or errors:
+    ...                                     # write nothing
+
+build_target(corpus, "gm-module", out_path)
+build_target(corpus, "engine-data", out_path)
 ```
 
-`compile_docs(*dirs, root_id=...)` keeps its current signature and tuple
-return, so nothing that calls it today has to change.
+`Corpus` carries `docs`, `compiled`, `errors`, `warnings`, `profile`,
+`references` and `version`, plus `local()` — this corpus's own
+documents, in load order, excluding anything reached by reference.
 
-## 9. Demonstrating this in `rules/demo/`
+`build_target` returns `(bytes, order)` for the book shape and a count
+for the others. Its `out_path` defaults to the target's declared
+`output` resolved against `base_dir`; a driver building one adventure at
+a time passes the path instead. Where an output goes is the driver's
+business — templating a path would be this toolset holding an opinion
+about how a consumer lays out its build directory.
 
-You were right that this needs thought: most of these features are
-corpus-shaped, and `demo` is one corpus with one root. My answer is
-both, split by what each is good at.
+`compile_docs(*dirs, root_id=...)` keeps its old signature and its
+`(docs, compiled, errors)` return.
 
-**Throwaway corpora carry the behaviour**, via `with_temp_rules()` as
-the suite already does for everything except the integration smoke test.
-A corpus with two audience tags, a corpus with no root, a corpus whose
-kinds carry two differently-named blocks, a corpus that resolves a
-reference into another corpus's build output — each is three files and
-asserts one thing. A permanent fixture whose whole job is to have no
-book root would be a strange thing to keep.
+### Rendering one document
 
-**`rules/demo/` gains a sibling corpus for the demonstration**, because
-`SHARING.md` condition 3 says a feature is *demonstrated* there, and
-demonstrated means a person can read it — a passing test is not a worked
-example. I propose `rules/demo-supplement/`: a small corpus with a
-`corpus.yaml`, one new kind, a second audience tag, a second data block,
-and a reference into `demo`'s own build output. A supplement is a
-generic publishing idea rather than a game, so it stays inside the rule
-that keeps the toolset shareable.
+`compiled[id]["marked"]` is the document resolved — interpolated,
+tabulated, linked — with its audience markers still in place. Applying a
+policy is a target's job, because with more than two targets there is no
+single pair of forms worth precomputing:
 
-That needs a row in `SHARING.md`'s write-surface table, since it says
-`rules/<other>/` belongs to nobody and names `rules/demo/` as the
-exception. There would be two exceptions, for the same reason.
+```python
+text_for(corpus, doc_id, target)      # audiences applied, includes intact
+snippet_html(corpus, doc_id)          # audiences applied, includes removed, rendered
+```
 
-I would also add `corpus.yaml` to `rules/demo/` itself, spelling out the
-default profile explicitly. It changes no behaviour by construction, and
-it makes the claim "the default profile is today's behaviour" something
-a reader can check rather than take on trust.
+### Finding a corpus
 
-## 10. What I would change from what you asked for
+`build.py` and `test_rules.py` take a name or `--path`. A name is looked
+up in the installed ruleset directory, then the working one, then
+anything on **`$RULESET_PATH`** (`os.pathsep`-separated) — which can add
+a location but never shadow one, so a project that builds the same
+corpus every day need not spell out where it is every day.
 
-- **`encounter:` stays `encounter:`** (item 4). Reasoning in section 2.
-- **Two additions you did not ask for**, both because they are
-  expressible without any game in them: a kind's default audience
-  (section 3), which is the generic form of your folder conventions, and
-  `refs:` (section 7), which is the one that most reduces the driver to
-  configuration. The first I would build; the second only if you want it
-  in scope.
-- **One thing I would leave in your driver**: outcome ids
-  (`on_success`, `when`) and the adventure graph's own semantics — and
-  the per-adventure output layout, since the toolset takes an output
-  path per target rather than templating one.
-- **Ruleset lookup without `--path`** (your non-blocker): a
-  `RULESET_PATH` environment variable, `os.pathsep`-separated, appended
-  to the two-place search. One line in `find_ruleset`, inert when unset,
-  and it serves both tools at once because `test_rules.py` already
-  imports that lookup rather than repeating it.
+---
 
-## 11. How "nothing changes" gets proved
+## The worked example
 
-Not asserted — measured, the same way a PATCH release is proved by its
-diff rather than by its changelog:
+`rules/demo-supplement/` is a corpus that is not a ruleset and not a
+game: four kinds of its own, two audience tags, four targets over three
+shapes, a second data block called `setup`, `based_on` between two
+documents, `refs` on a frontmatter field, and a reference into `demo`'s
+build outputs.
 
-1. Build `demo` and `ico` on `main`; keep the six output files.
-2. Build both on this branch, with no `corpus.yaml` anywhere.
-3. `diff` must be empty for all six. Not equivalent — identical.
-4. Then add `corpus.yaml` to `demo` spelling out the default profile,
-   rebuild, and diff again. Also empty, which is what proves the
-   declaration format describes the default rather than approximating
-   it.
-5. `python3 tools/test_rules.py` and `python3 tools/test_rules.py ico`
-   both pass, and the suite grows a section per item above.
+```bash
+python3 tools/build.py demo              # the supplement reads demo's build
+python3 tools/build.py demo-supplement
+python3 tools/test_rules.py demo-supplement
+```
 
-And the constraint you set, which I expect to hold: **nothing in
-`rules/ico/` needs to change.** Its documents use six frontmatter keys
-and four directive words, every one of which the default profile covers.
-If I find myself wanting to edit it, I will stop and say what pushed me
-there.
+Compare `build/book.html` with `build/handout.html`: the same corpus and
+the same shape, differing only in who is reading.
+
+Building it warns that `demo` carries no version. That is the check
+working rather than a defect — `demo` is deliberately unversioned, and
+an unversioned dependency is one nothing built on it can record having
+been built against.

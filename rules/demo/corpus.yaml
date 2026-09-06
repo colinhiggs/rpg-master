@@ -1,0 +1,63 @@
+# The default corpus profile, written out.
+#
+# Every value here is what a corpus gets when it has no corpus.yaml at
+# all, so deleting this file would change nothing about how `demo`
+# compiles. It is here on purpose, for two reasons.
+#
+# It is the worked example: the format is easier to judge against
+# behaviour you already know than against behaviour you have to imagine.
+# And it is a check on a claim that would otherwise have to be taken on
+# trust -- that the declaration format really does describe the toolset's
+# old built-in behaviour rather than approximating it. Build demo with
+# this file and without it; the three outputs are byte-identical either
+# way, and if they ever stop being, one of the two is wrong.
+#
+# A corpus declares only what differs from the default, so a real one is
+# a great deal shorter than this. See rules-toolset/CORPUS.md.
+
+# --- Document kinds -------------------------------------------------
+# summary:   required | optional
+# data:      the frontmatter blocks documents of this kind may carry
+# discovery: how a reader is expected to find it -- link (by
+#            cross-reference), include (book structure), lookup (an
+#            index, such as a bestiary). Only `link` kinds are warned
+#            about when nothing links to them.
+kinds:
+  rule:     { summary: required, data: [mechanics], discovery: link }
+  section:  { summary: optional, data: [mechanics], discovery: include }
+  creature: { summary: required, data: [mechanics], discovery: lookup }
+
+# --- Audience tags --------------------------------------------------
+# Declaring a tag is what makes {% book-only %}...{% endbook-only %}
+# mean something. An undeclared {% tag %} is a build error rather than
+# literal text in the output.
+audiences: [book-only]
+
+# --- Book roots -----------------------------------------------------
+# Where the book starts, and what the linter measures reachability
+# from. A corpus whose documents are reached by reference rather than
+# by inclusion declares none, and those checks are then skipped rather
+# than reported as a missing root.
+roots: [rulebook]
+
+# --- Outputs --------------------------------------------------------
+# A target is a document filter, an audience policy and a shape.
+# `default` is required on anything that carries prose, so that a tag
+# added later gets this target's own answer rather than a surprise:
+# losing content from a book is the failure that matters there, and
+# leaking a design note into a tooltip is the failure that matters in a
+# snippet.
+targets:
+  book:
+    shape: book
+    root: rulebook
+    audiences: { default: keep }
+    output: build/book.html
+  snippets:
+    shape: snippets
+    audiences: { default: drop }
+    output: build/snippets.json
+  mechanics:
+    shape: data
+    blocks: [mechanics]
+    output: build/mechanics.json

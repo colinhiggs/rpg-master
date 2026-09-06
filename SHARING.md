@@ -32,8 +32,9 @@ up often.
 
 | Area | Who writes it | Why |
 |---|---|---|
-| `rules-toolset/tools/` | anyone | The shared area, open by design — but see the rule below. |
+| `rules-toolset/rulesc/`, `rules-toolset/tools/` | anyone | The shared area, open by design — but see the rule below. `rulesc/` is the compiler and the API a second compiler imports; `tools/` is the command lines over it. |
 | `rules/demo/` | anyone extending the toolset | The demo ruleset is the toolset's own test fixture, and a new feature is demonstrated there. |
+| `rules/demo-supplement/` | anyone extending the toolset | The second fixture: a corpus that is *not* a ruleset. Same reason, different shape. |
 | `rules/<other>/` | nobody | Another repository's content. See "Installed rulesets" below. |
 | `server.py`, `data.py`, `public/` | the engine | A consumer changing the engine should say what it needed and why. |
 | `rpg-assets/` | the engine | Placeholder art, replaced wholesale rather than edited. |
@@ -54,14 +55,18 @@ In practice, an addition qualifies when all four of these hold:
    targets. Not spells, scenes or hit points.
 2. **Any ruleset could use it.** A new document `kind`, directive or
    frontmatter key is offered to all of them, not switched on for one.
-3. **It is demonstrated in `rules/demo/`.** The demo ruleset is what
-   proves the feature is expressible without the game that motivated
-   it, and it is where the next person reads how the feature works.
+3. **It is demonstrated in a demo corpus.** `rules/demo/` is the
+   ruleset-shaped fixture and `rules/demo-supplement/` the one that is
+   not a ruleset; between them they prove a feature is expressible
+   without the game that motivated it, and they are where the next
+   person reads how it works. A test passing is not a demonstration —
+   somebody has to be able to read it.
 4. **It is covered by `tools/test_rules.py`**, and the suite passes
-   against both rulesets:
+   against every corpus:
 
 ```bash
 python3 tools/build.py demo && python3 tools/test_rules.py
+python3 tools/build.py demo-supplement && python3 tools/test_rules.py demo-supplement
 python3 tools/test_rules.py ico
 ```
 
@@ -84,11 +89,19 @@ the adventures:
 - `mechanics.json` — `_generated`, then `_version`, then `rules`.
 - `book.html` — for people, not for parsing.
 
+Which of them a corpus writes, and under what names, is now declared in
+its `corpus.yaml` rather than fixed here; but there are still exactly
+three *shapes*, and a fourth is Python rather than a declaration. See
+`rules-toolset/CORPUS.md`.
+
 In all of them, **a top-level key beginning with `_` is metadata about
 the build, not a document**. That convention is what allows a stamp to
 be added to a flat map without wrapping it in an envelope and changing
 the shape every existing reader already handles. Use it for anything
-else that has to travel alongside the data.
+else that has to travel alongside the data — `_references` (which corpora
+this one was built against) and `_blocks` (the data shape's block names,
+present only when there is more than one) were both added that way, and
+neither appears in an output that does not need it.
 
 Changing these shapes breaks every consumer simultaneously, and unlike
 a ruleset change there is no version number that warns them. It is the
@@ -107,13 +120,15 @@ Two things follow, and both have bitten somebody:
   repository. The edit is invisible to that repository, will be
   overwritten by the next install, and in the meantime shadows the real
   source so that changes made properly appear to do nothing.
-- **Never commit one here.** Only `rules/demo/` belongs to this
+- **Never commit one here.** Only the demo corpora belong to this
   repository. Committing an installed ruleset puts a second copy of
   another project's history in this one, and the two copies diverge
   immediately.
 
-`rules/demo/` is the exception on purpose: it is not a game, it is the
-toolset's worked example and test fixture.
+`rules/demo/` and `rules/demo-supplement/` are the exceptions on
+purpose: neither is a game, both are the toolset's worked examples and
+test fixtures. A third fixture needs the same justification — that it
+demonstrates something about the toolset which the existing two cannot.
 
 ## Building a ruleset that lives outside this repository
 
@@ -130,13 +145,15 @@ python3 tools/test_rules.py --path ../../rules-ico
 The ruleset name is then the directory's, so both report `rules-ico`
 rather than `ico`. Only the label differs.
 
-`test_rules.py` resolves a ruleset by importing `build.py`'s own
-lookup rather than repeating it, so the two can never disagree about
-where a ruleset lives — which is the shape any further work here should
-take. Teaching the toolset to find rulesets in a layout like that
-without being told each time — an environment variable, or a small
-config file saying where to look — is the next step, and `--path` is
-the floor under it.
+Both tools resolve a corpus by importing one lookup from `rulesc/`
+rather than each repeating it, so they cannot disagree about where a
+corpus lives — which is the shape any further work here should take.
+
+For a layout you build every day, `$RULESET_PATH` holds extra
+directories to search (`os.pathsep`-separated). It is appended to the
+two built-in places rather than inserted before them, so it can add a
+location but never shadow one, and `--path` remains the floor under
+it.
 
 ## What is not versioned here
 
@@ -150,26 +167,40 @@ the same convention the Ico rules use (`VERSION`, an annotated tag, and
 tiers defined by what the consumer has to *do*). Until then, a hash is
 honest and a version number would be theatre.
 
-## Extensions already wanted
+## Extensions that were wanted, and landed
 
-Named here so that two projects do not quietly invent two different
-answers to the same question. None of these are built.
+All four are built. They are named here because the reasoning still
+applies to the next extension: two projects should not quietly invent
+two different answers to one question.
 
-- **Document kinds are a closed list.** `KINDS` in `tools/rulesc.py` is
-  `("rule", "section", "creature")` and anything else is a fatal error.
-  The adventures project needs `npc`, `scene` and `adventure`.
-- **Audience stripping generalises.** `{% book-only %}` is one tag
-  against two targets. Adventures need `{% gm-only %}` against four
-  (gm-module, player-handout, player-booklet, engine-data). This is the
-  same mechanism twice and wants to be one mechanism parameterised by
-  target, not two implementations.
-- **Frontmatter and markdown parsing wants sharing.** `rulesc.py`
-  already does it correctly, including the linter that makes a
-  hardcoded number a build error. An adventure compiler should call it,
-  not reimplement it.
-- **Ruleset lookup without being told each time**, as above. `--path`
-  on both tools is done; a project that builds the same ruleset every
-  day should not have to spell out where it is every day.
+- **Document kinds were a closed list** in the toolset's own source. A
+  corpus now declares its kinds, and the old tuple is the declaration a
+  corpus gets when it says nothing.
+- **Audience stripping generalised.** `{% book-only %}` was one tag
+  against two implied targets. A corpus now declares its tags and each
+  target says what it does with each of them; `book-only` against a book
+  and a snippet file is that mechanism with one thing declared.
+- **Frontmatter and markdown parsing is shared.** The compiler is a
+  package, `rules-toolset/rulesc/`, and `tools/` is command lines over
+  it. A second compiler imports it rather than reimplementing it.
+- **Ruleset lookup takes `$RULESET_PATH`**, appended to the two-place
+  search, so a project that builds the same corpus every day need not
+  spell out where it is every day.
+
+`rules-toolset/CORPUS.md` is the reference for all of it, and the API a
+second compiler calls.
+
+## Extensions wanted next
+
+- **A fourth output shape**, if one is ever genuinely needed. Three
+  cover a book, a keyed map and a data file, and the four targets the
+  adventures project needs turned out to be those three parameterised.
+  A fourth is a change to the interface and is agreed before it is
+  written.
+- **A resolved-Markdown output**, so a consumer can run the compiled
+  text through a real typesetter rather than through `book.html`.
+- **Version the toolset**, if it ever gains a consumer that cannot pin
+  it. See below.
 
 ## Working in a submodule checkout
 

@@ -1,0 +1,61 @@
+{
+  "_generated": "Built from rules/*.md by tools/build.py - do not edit.",
+  "_blocks": [
+    "mechanics",
+    "setup"
+  ],
+  "_references": [
+    {
+      "name": "demo",
+      "version": null,
+      "source": "../demo/build"
+    }
+  ],
+  "rules": {
+    "goblin-captain": {
+      "mechanics": {
+        "threat": 4,
+        "attack": 5,
+        "hit_points": 13,
+        "speed_tiles": 7,
+        "gear": [
+          "shield",
+          "sword"
+        ]
+      }
+    },
+    "goblin-scout": {
+      "mechanics": {
+        "threat": 2,
+        "attack": 5,
+        "hit_points": 6,
+        "speed_tiles": 7,
+        "gear": [
+          "sling",
+          "knife"
+        ]
+      }
+    },
+    "river-crossing": {
+      "setup": {
+        "foes": [
+          "goblin-scout",
+          "goblin-scout",
+          "goblin-captain"
+        ],
+        "checks": [
+          {
+            "id": "spot-the-ford",
+            "difficulty": 14,
+            "on_success": "cross-unseen"
+          },
+          {
+            "id": "keep-your-footing",
+            "difficulty": 9
+          }
+        ],
+        "leads_to": "aftermath"
+      }
+    }
+  }
+}

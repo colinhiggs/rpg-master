@@ -98,10 +98,15 @@ today.
 |---|---|---|
 | `id` | yes | Stable identifier; must match the filename stem. Links, includes and snippet keys use it |
 | `title` | yes | Heading in the book, title in tooltips |
-| `kind` | no | `rule` (default) or `section`. Sections are book scaffolding — chapters, the root — and skip the summary requirement |
+| `kind` | no | `rule` (default), `section` or `creature` in a ruleset. Sections are book scaffolding — chapters, the root — and skip the summary requirement. A corpus can declare kinds of its own; see `CORPUS.md` |
 | `summary` | rules only | One-or-two sentences. This is the tooltip text — keep it under ~240 chars |
-| `mechanics` | no | Machine-readable values. Goes to the server verbatim; no prose here ever |
+| `mechanics` | no | Machine-readable values. Goes to the server verbatim; no prose here ever. It is the data block a ruleset has; a corpus can declare others, addressed the same way |
 | `tags` | no | Grouping/filtering; shown in the book, passed through to snippets |
+| `based_on` | no | Inherit another document's data blocks. Scalars replace, nested maps merge key by key, lists replace |
+
+Any other frontmatter key is an error rather than a field silently
+ignored, which is what makes `mechanic:` for `mechanics:` cost a
+moment instead of an afternoon.
 
 `spine:` no longer exists. Book order comes from the include tree
 (below); leaving a stale `spine:` in a file is a hard error rather than
@@ -111,12 +116,18 @@ a silently-ignored field.
 
 | Syntax | Does |
 |---|---|
-| `{{ mechanics.key }}` | Insert a value from this document's mechanics |
-| `{{ other-id:mechanics.key }}` | Insert a value from another document's mechanics |
+| `{{ mechanics.key }}` | Insert a value from this document's own data |
+| `{{ mechanics.list.entry-id.key }}` | Address a list entry by its `id` (or by position, `list.0.key`) |
+| `{{ other-id:mechanics.key }}` | Insert a value from another document's data |
 | `[[other-id]]` | Link, using the target's title as the text |
 | `[[other-id\|custom text]]` | Link with custom text |
 | `{% include other-id %}` | Splice another document in at this point |
 | `{% book-only %}…{% endbook-only %}` | Content for the book only; dropped from the snippet |
+
+A `{% directive %}` the corpus does not understand is a build error.
+It used to pass through into the output as literal text, which is the
+worse failure: content an unrecognised tag was meant to hide gets
+published, and the only evidence is a stray marker mid-paragraph.
 
 ### Keeping commentary out of tooltips
 
@@ -144,8 +155,30 @@ The **linter still reads inside the block**, deliberately: a design note
 that quotes a mechanic value goes stale exactly like any other prose, so
 drift detection applies there too.
 
-Markers must be closed and must not nest; either mistake fails the
-build rather than silently swallowing the rest of a document.
+Markers must be closed, must not nest inside themselves, and must not
+overlap each other; each mistake fails the build rather than silently
+swallowing the rest of a document.
+
+`book-only` is a ruleset's one audience tag against its two targets, and
+it is the general mechanism with only one thing declared. A corpus can
+declare several tags and say, per output, which are kept and which are
+dropped — an adventure keeping referee notes in a GM module and dropping
+them from the players' handout is the same mechanism with more of it
+switched on. See **[CORPUS.md](CORPUS.md)**.
+
+## Corpora that are not rulesets
+
+A ruleset is one shape of corpus: three kinds, one audience tag, one
+data block called `mechanics`, one book root, three outputs. All six of
+those are now declared in `<corpus>/corpus.yaml` rather than fixed in
+this toolset, and a corpus that declares nothing gets exactly the
+ruleset defaults.
+
+`CORPUS.md` is the reference: the declaration format, the API a second
+compiler imports, and `rules/demo-supplement/` as a worked example of a
+corpus with kinds of its own, two audiences, four outputs, a second data
+block, document inheritance, and references into another corpus's build
+outputs.
 
 ## The include tree
 
@@ -335,17 +368,26 @@ button to `turn-order`.
 
 ```
 rpg-master/rules-toolset/   (generic, no game content — ships with the game)
+  rulesc/            the compiler, as a package — this is what another
+                     compiler imports; see CORPUS.md
+    __init__.py      the public API, and the only thing to import
+    compile.py       parser, includes, cycle detection, interpolation,
+                     inheritance, references, links, markdown rendering
+    profile.py       what a corpus declares about itself
+    targets.py       the three output shapes
+    lint.py          the drift and structure checks
+    lookup.py        finding a ruleset by name, and reading its VERSION
+    errors.py        RuleError and IncludeCycleError
   tools/
-    rulesc.py          parser, includes, cycle detection, interpolation,
-                       links, markdown rendering
-    lint.py            the drift and structure checks
-    build.py           walks the include tree, writes the three outputs;
-                       takes a ruleset name/path as its argument
-    rules_runtime.py   server-side reader (copy into the game project)
-    test_rules.py      55 tests on the pipeline's guarantees; takes an
-                       optional ruleset name (defaults to 'demo')
+    build.py         command line over rulesc: takes a corpus name or
+                     path, writes whatever targets its profile declares
+    test_rules.py    182 tests on the pipeline's guarantees; takes an
+                     optional corpus name (defaults to 'demo')
+    rules_runtime.py server-side reader (copy into the game project)
   snippet-demo.html    working in-game context help demo, wired to the
                        demo ruleset specifically (see its own note)
+  CORPUS.md            corpus profiles: kinds, audiences, targets,
+                       references, and the API a second compiler calls
   README.md            this file
 
 ../rules/demo/              (installed ruleset — exercises the toolset)
