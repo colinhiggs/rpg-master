@@ -36,8 +36,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rulesc import (
     IncludeCycleError, Profile, RuleError,
-    build_target, compile_corpus, lint, read_version, resolve_ruleset_dir,
-    search_path,
+    build_target, check_target_links, compile_corpus, lint, read_version,
+    resolve_ruleset_dir, search_path,
 )
 
 
@@ -109,7 +109,7 @@ def main():
         return 1
 
     lint_warnings, lint_errors = lint.run_all(corpus.docs, profile)
-    warnings = corpus.warnings + lint_warnings
+    warnings = corpus.warnings + lint_warnings + check_target_links(corpus)
     all_errors = corpus.errors + lint_errors
 
     for w in warnings:

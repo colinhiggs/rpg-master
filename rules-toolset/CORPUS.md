@@ -84,6 +84,32 @@ Before, an undeclared tag passed through into the output as literal
 text, which is the worse failure: content the tag was meant to hide gets
 published, and the only evidence is a stray marker mid-paragraph.
 
+### Links follow the audience, not the author
+
+Everything derived from a document's links is derived **per target**,
+from the links still standing once that target's audience policy has
+been applied. A link written inside a span this target drops is not a
+link this reader has:
+
+- **"See also" in the book shape** lists only what this target renders.
+- **`related` in the snippets shape** likewise, so a withheld id is not
+  in the file at all.
+- **A link pointing at a document the target does not render** — because
+  it was filtered out by `select`, or its kind's audience is dropped —
+  becomes the words the author wrote and nothing else: no anchor, no
+  `data-rule-id`. A dead anchor is a defect, and the id in the page
+  source is a trace of something the reader was not meant to be told
+  about.
+
+That last case also produces a warning from `check_target_links`, since
+a cross-reference in player-facing prose to a referee-only document is
+an authoring decision to revisit rather than something to paper over.
+
+`doc.links_out` remains the whole-corpus set and is what the linter's
+orphan check reads — "is this document referenced anywhere by anyone" is
+a different question from "what can this reader see", and only the
+second one is per target.
+
 ### `roots`
 
 ```yaml
@@ -319,6 +345,8 @@ downstream. `SHARING.md` covers who may change them.
 - **`snippets`** — a flat map of document id to short form. A document
   gains `based_on` and `external` keys only when it has them, so a
   ruleset's `snippets.json` keeps exactly the shape it always had.
+  `related` holds the links this target renders, not every link in the
+  document.
 - **`data`** — the declared blocks, no prose, no HTML.
 
 The `data` shape has one wrinkle worth knowing. With **one** declared
@@ -406,6 +434,9 @@ single pair of forms worth precomputing:
 ```python
 text_for(corpus, doc_id, target)      # audiences applied, includes intact
 snippet_html(corpus, doc_id)          # audiences applied, includes removed, rendered
+related_for(corpus, doc_id, target)   # (internal, external) ids this target shows
+rendered_ids(corpus, target)          # every id this target puts before a reader
+check_target_links(corpus)            # warnings: a visible link the target cannot follow
 ```
 
 ### Finding a corpus

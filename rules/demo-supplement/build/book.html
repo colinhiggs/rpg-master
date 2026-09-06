@@ -62,14 +62,15 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p>The water is slow and shallow enough to wade and the far bank is a long way off. Both of those are why the reeds are worth watching.</p>
 <p>Anyone crossing may look at the banks first, against a difficulty of 14. Anyone hurrying across instead is keeping their footing against 9, and the streambed counts as difficult ground under <a href="../../demo/build/book.html#rule-movement" data-rule-id="movement" class="external-ref">Movement</a> — each tile entered costs 2.</p>
 <h4>Running it</h4>
-<p>The scouts open and the captain does not, until somebody is in the water. If the party spotted the reeds, reverse that: the captain has nothing to gain by waiting for an ambush that is not going to happen.</p>
+<p>The scouts open and the <a href="#rule-goblin-captain" data-rule-id="goblin-captain">captain</a> does not, until somebody is in the water. If the party spotted the reeds, reverse that: the captain has nothing to gain by waiting for an ambush that is not going to happen.</p>
 <p>Whichever way it ends, it ends at <a href="#rule-the-far-bank" data-rule-id="the-far-bank">The Far Bank</a>.</p>
 <h4>Design note</h4>
 <p>Three things here have no equivalent in a ruleset. This document is called <code>encounter.md</code> and sits in a directory called <code>the-crossing</code>, which is where its id comes from: the <code>encounter</code> kind declares <code>id_from: directory</code>, for a corpus that files one document per directory alongside that document's own maps and handouts. The guarantee is the one the filename rule gives everywhere else -- an id is derivable from where the document sits, so a document cannot be moved without its links noticing.</p>
 <p>The block is called <code>setup</code> rather than <code>mechanics</code>, and the prose interpolates out of it by name; a block is addressed by the name its kind declares, so the toolset never has to be told what an encounter is.</p>
 <p>And the checks are a list, addressed by each entry's own <code>id</code> rather than by position — write <code>setup.checks.spot-the-ford.difficulty</code>, not <code>setup.checks.0.difficulty</code>, so that adding a check at the top of the list does not silently repoint every number in the paragraph below it.</p>
 <p>Both difficulties are covered by the drift check exactly as a rule's values are: write one of them out as a digit and the build fails.</p>
-<p class="related">See also: <a href="#rule-the-far-bank">The Far Bank</a></p>
+<p>The captain is linked from inside the <code>gm-only</code> span above and nowhere else, which is why <code>build/book.html</code> lists it under "See also" here and <code>build/handout.html</code> lists nothing but the far bank. A related-links line is built per target, from the links still standing after that target's audience policy — otherwise the handout would name the one document the target exists to withhold, and hang a dead anchor off it.</p>
+<p class="related">See also: <a href="#rule-goblin-captain">Captain</a>, <a href="#rule-the-far-bank">The Far Bank</a></p>
 </section>
 <section class="doc" id="rule-the-far-bank">
 <h3>The Far Bank</h3>

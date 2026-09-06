@@ -1438,6 +1438,132 @@ shutil.rmtree(tmp)
 
 
 # ---------------------------------------------------------------------
+print("\nRelated links are per target:")
+
+# A link that lives only inside a span one target drops. Before this was
+# per target, "See also" was built once from the whole body and rendered
+# in every target -- handing a player-facing output the title of the one
+# document the target exists to withhold, with a dead anchor on it.
+tmp = with_temp_rules({
+    "top.md": """---
+id: top
+title: Top
+kind: section
+---
+{% include s %}
+{% include n %}
+""",
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+---
+Read this aloud.
+
+{% gm-only %}
+The one who matters is [[n]].
+{% endgm-only %}
+""",
+    "n.md": """---
+id: n
+title: The innkeeper is the traitor
+kind: npc
+summary: An NPC.
+---
+A whole document for the GM.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("a corpus linking into a dropped document compiles", not corpus.errors, str(corpus.errors))
+with tempfile.TemporaryDirectory() as td:
+    td = Path(td)
+    rulesc.build_target(corpus, "module", td / "module.html")
+    rulesc.build_target(corpus, "handout", td / "handout.html")
+    module = (td / "module.html").read_text(encoding="utf-8")
+    handout = (td / "handout.html").read_text(encoding="utf-8")
+    check("the keeping target still lists the link under See also",
+          "See also" in module and "The innkeeper is the traitor" in module)
+    check("the dropping target does not list it",
+          "The innkeeper is the traitor" not in handout, handout)
+    check("and leaves no dead anchor to it",
+          "#rule-n" not in handout and 'data-rule-id="n"' not in handout, handout)
+    check("the dropping target has no See also line at all here",
+          "See also" not in handout, handout)
+
+s_related, _ = rulesc.related_for(corpus, "s", ADVENTURE.targets["module"])
+h_related, _ = rulesc.related_for(corpus, "s", ADVENTURE.targets["handout"])
+check("related_for reports what each target actually shows",
+      s_related == ["n"] and h_related == [], f"{s_related} / {h_related}")
+check("doc.links_out is still the whole-corpus answer, for lint",
+      corpus.docs["s"].links_out == {"n"}, str(corpus.docs["s"].links_out))
+
+with tempfile.TemporaryDirectory() as td:
+    td = Path(td)
+    snips = dataclasses.replace(ADVENTURE, targets={
+        "open": rulesc.Target("open", "snippets", {"default": "keep"}),
+        "closed": rulesc.Target("closed", "snippets", {"default": "drop"}),
+    })
+    c2 = rulesc.compile_corpus(tmp, profile=snips)
+    rulesc.build_target(c2, "open", td / "open.json")
+    rulesc.build_target(c2, "closed", td / "closed.json")
+    opened = json.loads((td / "open.json").read_text(encoding="utf-8"))
+    closed = json.loads((td / "closed.json").read_text(encoding="utf-8"))
+    check("a snippet's related list is per target too",
+          opened["s"]["related"] == ["n"] and closed["s"]["related"] == [],
+          f'{opened["s"]["related"]} / {closed["s"]["related"]}')
+    check("and the withheld id is nowhere in the closed output",
+          '"n"' not in json.dumps(closed["s"]), json.dumps(closed["s"]))
+shutil.rmtree(tmp)
+
+# A link a reader CAN see, pointing at a document the target does not
+# render. It cannot be a working anchor, so it is rendered as the words
+# the author wrote and nothing else -- and the author is warned.
+tmp = with_temp_rules({
+    "top.md": """---
+id: top
+title: Top
+kind: section
+---
+{% include s %}
+{% include n %}
+""",
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+---
+Ask for [[n|the landlord]] by name.
+""",
+    "n.md": """---
+id: n
+title: The innkeeper is the traitor
+kind: npc
+summary: An NPC.
+---
+A whole document for the GM.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+with tempfile.TemporaryDirectory() as td:
+    td = Path(td)
+    rulesc.build_target(corpus, "handout", td / "handout.html")
+    handout = (td / "handout.html").read_text(encoding="utf-8")
+    check("a visible link to an unrendered document keeps the author's words",
+          "the landlord" in handout, handout)
+    check("but becomes no anchor and leaves no id behind",
+          "#rule-n" not in handout and 'data-rule-id="n"' not in handout
+          and "The innkeeper is the traitor" not in handout, handout)
+warns = rulesc.check_target_links(corpus)
+check("and the author is warned rather than left to notice",
+      any("'handout' does not render" in w and w.startswith("s:") for w in warns), str(warns))
+check("a link the target does render warns about nothing",
+      not any("'module' does not render" in w for w in warns), str(warns))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
 print("\nData blocks other than mechanics:")
 
 tmp = with_temp_rules({

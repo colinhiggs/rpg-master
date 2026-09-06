@@ -693,6 +693,34 @@ def expand_tables(doc: Doc, docs: dict, text: str, errors: list) -> str:
     return TABLE_RE.sub(repl, text)
 
 
+# A resolved link carries the document id it points at, so what a text
+# actually links to can be read back off it rather than re-derived from
+# the source. That matters once audiences exist: the links a reader can
+# follow are the ones still standing after the target's policy is
+# applied, which is not the same set the author wrote.
+ANCHOR_ID_RE = re.compile(r'data-rule-id="([^"]+)"')
+LOCAL_ANCHOR_RE = re.compile(
+    r'<a href="#rule-([A-Za-z0-9_-]+)" data-rule-id="[^"]*">(.*?)</a>', re.S)
+
+
+def links_in(text: str) -> set:
+    """Every document a resolved text links to, as the text now stands."""
+    return set(ANCHOR_ID_RE.findall(text))
+
+
+def strip_absent_links(text: str, present) -> str:
+    """Turn a link into its own words when the target does not render
+    the document it points at.
+
+    An anchor to a document that is not in this output is dead, and its
+    id in the page source is a trace of something the reader was not
+    meant to be told about. Neither is left behind: what remains is the
+    text the author wrote and nothing else, so the page reads as though
+    the link had never been one."""
+    return LOCAL_ANCHOR_RE.sub(
+        lambda m: m.group(0) if m.group(1) in present else m.group(2), text)
+
+
 def resolve_links(text: str, doc: Doc, docs: dict, errors: list, href_for) -> str:
     def repl(match):
         target = match.group(1).strip()

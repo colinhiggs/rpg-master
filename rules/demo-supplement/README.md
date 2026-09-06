@@ -31,6 +31,7 @@ python3 tools/test_rules.py demo-supplement
 | `rules/encounters/the-crossing/encounter.md` | `id_from: directory`; a data block called `setup` rather than `mechanics`; a list addressed by each entry's `id`; a cross-corpus link and interpolation |
 | `rules/goblin-captain.md` | `based_on`: a scalar replaced, a scalar inherited, a list replaced wholesale |
 | `rules/gm-notes.md` | A kind whose default audience covers the whole document, with no marker in the file |
+| `book.html` vs `handout.html`, "See also" | Related links are per target. The captain is linked only from inside a `gm-only` span, so the book lists it and the handout does not — a related-links line built once for every target would hand the handout the title of the document the target exists to withhold |
 | `rules/encounters/the-far-bank/encounter.md` | A document with no data block at all, reached because another document's frontmatter declares a `refs` path pointing at it |
 
 ## Two things that look wrong and are not

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .compile import (
     INCLUDE_RE, IncludeCycleError, RuleError,
-    apply_audiences, include_order, render_markdown,
+    apply_audiences, include_order, links_in, render_markdown, strip_absent_links,
 )
 
 BOOK_ROOT = "rulebook"   # the document the book is built from, by default
@@ -76,10 +76,75 @@ def _renderable(corpus, target):
             if not d.external and target.selects(d, corpus.profile)]
 
 
-def text_for(corpus, doc_id, target):
+def rendered_ids(corpus, target) -> set:
+    """The ids this target actually puts in front of a reader."""
+    return {d.id for d in _renderable(corpus, target)}
+
+
+def _audience_applied(corpus, doc_id, target):
+    return apply_audiences(corpus.compiled[doc_id]["marked"], target, corpus.profile)
+
+
+def text_for(corpus, doc_id, target, present=None):
     """One document's resolved text with this target's audience policy
     applied, include directives still in place."""
-    return apply_audiences(corpus.compiled[doc_id]["marked"], target, corpus.profile)
+    if present is None:
+        present = rendered_ids(corpus, target)
+    return strip_absent_links(_audience_applied(corpus, doc_id, target), present)
+
+
+def related_for(corpus, doc_id, target, present=None):
+    """The documents this one links to *as this target renders it*.
+
+    Not doc.links_out, which is every link in the document however it is
+    wrapped. A link that lives only inside a span this target drops is
+    not a link this reader has, and listing it under "See also" would
+    hand them the title of the very document the target exists to
+    withhold -- with a dead anchor attached, since that document is not
+    in the file either.
+
+    doc.links_out is still the right answer to a different question, and
+    the linter goes on asking it: is this document referenced anywhere
+    in the corpus, by anyone, in any audience."""
+    if present is None:
+        present = rendered_ids(corpus, target)
+    linked = links_in(_audience_applied(corpus, doc_id, target))
+    internal, external = [], []
+    for doc_ref in sorted(linked):
+        other = corpus.docs.get(doc_ref)
+        if other is None:
+            continue
+        if other.external:
+            external.append(doc_ref)
+        elif doc_ref in present:
+            internal.append(doc_ref)
+    return internal, external
+
+
+def check_target_links(corpus) -> list:
+    """Warn where a link a reader CAN see points at a document this
+    target does not render.
+
+    Those are silently turned into plain text so the output holds no
+    dead anchor and no trace of the missing document -- but silence is
+    the wrong answer to the author, who has written a cross-reference in
+    player-facing prose to something only the referee gets. The fix is
+    theirs to choose: move the sentence behind an audience tag, or bring
+    the document into the target."""
+    warnings = []
+    for name, target in corpus.profile.targets.items():
+        if target.shape == "data":
+            continue                      # carries no prose, so no links
+        present = rendered_ids(corpus, target)
+        for doc in _renderable(corpus, target):
+            for doc_ref in sorted(links_in(_audience_applied(corpus, doc.id, target))):
+                other = corpus.docs.get(doc_ref)
+                if other is None or other.external or doc_ref in present:
+                    continue
+                warnings.append(
+                    f"{doc.id}: links to '{doc_ref}', which target '{name}' does not "
+                    "render — the link is rendered as plain text there")
+    return warnings
 
 
 def snippet_html(corpus, doc_id, target=None):
@@ -107,6 +172,7 @@ def render_doc_for_book(doc_id, corpus, target, depth, stack):
     docs = corpus.docs
     doc = docs[doc_id]
     c = corpus.compiled[doc_id]
+    present = rendered_ids(corpus, target)
     parts = []
 
     # The root document's title becomes the book's <h1>, handled by the
@@ -121,7 +187,7 @@ def render_doc_for_book(doc_id, corpus, target, depth, stack):
             parts.append(f'<p class="summary">{c["summary_html"]}</p>')
 
     # Split prose around the include points and interleave.
-    segments = INCLUDE_RE.split(text_for(corpus, doc_id, target))
+    segments = INCLUDE_RE.split(text_for(corpus, doc_id, target, present))
     # re.split with one capture group alternates: prose, id, prose, id, ...
     for i, segment in enumerate(segments):
         if i % 2 == 0:
@@ -149,9 +215,10 @@ def render_doc_for_book(doc_id, corpus, target, depth, stack):
         # raw keys again would only restate the rule in a worse language.
         # The data target remains the readable form for anyone who wants
         # the data itself.
-        if doc.links_out:
+        related, _ = related_for(corpus, doc_id, target, present)
+        if related:
             links = ", ".join(
-                f'<a href="#rule-{t}">{docs[t].title}</a>' for t in sorted(doc.links_out)
+                f'<a href="#rule-{t}">{docs[t].title}</a>' for t in related
             )
             parts.append(f'<p class="related">See also: {links}</p>')
         parts.append("</section>")
@@ -248,8 +315,10 @@ def build_snippets(corpus, target, out_path: Path):
     metadata about the build, not a document. No document id can collide
     with one, because an id is a filename stem."""
     snippets = {}
+    present = rendered_ids(corpus, target)
     for doc in _renderable(corpus, target):
         c = corpus.compiled[doc.id]
+        related, external = related_for(corpus, doc.id, target, present)
         entry = {
             "id": doc.id,
             "kind": doc.kind,
@@ -258,7 +327,7 @@ def build_snippets(corpus, target, out_path: Path):
             "summary_html": c["summary_html"],
             "html": snippet_html(corpus, doc.id, target),
             "tags": doc.tags,
-            "related": sorted(doc.links_out),
+            "related": related,
             "includes": doc.includes,
             "book_anchor": f"#rule-{doc.id}",
         }
@@ -266,8 +335,8 @@ def build_snippets(corpus, target, out_path: Path):
         # snippets.json keeps exactly the shape it has always had.
         if doc.based_on:
             entry["based_on"] = doc.based_on
-        if doc.links_external:
-            entry["external"] = sorted(doc.links_external)
+        if external:
+            entry["external"] = external
         snippets[doc.id] = entry
     payload = {"_version": corpus.version} if corpus.version else {}
     if corpus.references:

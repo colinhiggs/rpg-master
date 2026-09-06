@@ -29,9 +29,10 @@ counts as difficult ground under [[movement]] — each tile entered costs
 {% gm-only %}
 ## Running it
 
-The scouts open and the captain does not, until somebody is in the
-water. If the party spotted the reeds, reverse that: the captain has
-nothing to gain by waiting for an ambush that is not going to happen.
+The scouts open and the [[goblin-captain|captain]] does not, until
+somebody is in the water. If the party spotted the reeds, reverse that:
+the captain has nothing to gain by waiting for an ambush that is not
+going to happen.
 {% endgm-only %}
 
 Whichever way it ends, it ends at [[the-far-bank]].
@@ -60,4 +61,11 @@ list does not silently repoint every number in the paragraph below it.
 
 Both difficulties are covered by the drift check exactly as a rule's
 values are: write one of them out as a digit and the build fails.
+
+The captain is linked from inside the `gm-only` span above and nowhere
+else, which is why `build/book.html` lists it under "See also" here and
+`build/handout.html` lists nothing but the far bank. A related-links
+line is built per target, from the links still standing after that
+target's audience policy — otherwise the handout would name the one
+document the target exists to withhold, and hang a dead anchor off it.
 {% endbook-only %}

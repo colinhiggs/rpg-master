@@ -28,8 +28,8 @@ from . import lint
 from .compile import (
     INCLUDE_RE, Corpus, Doc, IncludeCycleError, RuleError,
     apply_audiences, compile_corpus, compile_docs, compile_rules,
-    detect_cycles, include_order, load_docs, load_reference,
-    merge_block, render_markdown,
+    detect_cycles, include_order, links_in, load_docs, load_reference,
+    merge_block, render_markdown, strip_absent_links,
 )
 from .profile import DROP, KEEP, Kind, Profile, Reference, Target
 from .lookup import (
@@ -38,7 +38,8 @@ from .lookup import (
 )
 from .targets import (
     BOOK_CSS, BOOK_ROOT,
-    build_book, build_data, build_snippets, build_target, snippet_html, text_for,
+    build_book, build_data, build_snippets, build_target, check_target_links,
+    related_for, rendered_ids, snippet_html, text_for,
 )
 
 __all__ = [
@@ -46,8 +47,8 @@ __all__ = [
     # documents and compiling
     "INCLUDE_RE", "Corpus", "Doc", "IncludeCycleError", "RuleError",
     "apply_audiences", "compile_corpus", "compile_docs", "compile_rules",
-    "detect_cycles", "include_order", "load_docs", "load_reference",
-    "merge_block", "render_markdown",
+    "detect_cycles", "include_order", "links_in", "load_docs", "load_reference",
+    "merge_block", "render_markdown", "strip_absent_links",
     # what a corpus declares about itself
     "DROP", "KEEP", "Kind", "Profile", "Reference", "Target",
     # finding a ruleset on disk
@@ -56,5 +57,6 @@ __all__ = [
     "search_path",
     # writing output
     "BOOK_CSS", "BOOK_ROOT", "build_book", "build_data", "build_snippets",
-    "build_target", "snippet_html", "text_for",
+    "build_target", "check_target_links", "related_for", "rendered_ids",
+    "snippet_html", "text_for",
 ]
