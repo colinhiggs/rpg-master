@@ -26,26 +26,35 @@
 
 from . import lint
 from .compile import (
-    INCLUDE_RE, Doc, IncludeCycleError, RuleError,
-    compile_docs, compile_rules, detect_cycles, include_order,
-    load_docs, render_markdown,
+    INCLUDE_RE, Corpus, Doc, IncludeCycleError, RuleError,
+    apply_audiences, compile_corpus, compile_docs, compile_rules,
+    detect_cycles, include_order, load_docs, load_reference,
+    merge_block, render_markdown,
 )
+from .profile import DROP, KEEP, Kind, Profile, Reference, Target
 from .lookup import (
-    INSTALLED_RULESETS, RULESET_SEARCH_PATH, TOOLSET_ROOT, WORKING_RULESETS,
-    find_ruleset, read_version, resolve_ruleset_dir,
+    INSTALLED_RULESETS, RULESET_PATH_ENV, RULESET_SEARCH_PATH, TOOLSET_ROOT,
+    WORKING_RULESETS, find_ruleset, read_version, resolve_ruleset_dir, search_path,
 )
 from .targets import (
     BOOK_CSS, BOOK_ROOT,
-    build_book, build_mechanics, build_snippets,
+    build_book, build_data, build_snippets, build_target, snippet_html, text_for,
 )
 
 __all__ = [
     "lint",
-    "INCLUDE_RE", "Doc", "IncludeCycleError", "RuleError",
-    "compile_docs", "compile_rules", "detect_cycles", "include_order",
-    "load_docs", "render_markdown",
-    "INSTALLED_RULESETS", "RULESET_SEARCH_PATH", "TOOLSET_ROOT", "WORKING_RULESETS",
-    "find_ruleset", "read_version", "resolve_ruleset_dir",
-    "BOOK_CSS", "BOOK_ROOT",
-    "build_book", "build_mechanics", "build_snippets",
+    # documents and compiling
+    "INCLUDE_RE", "Corpus", "Doc", "IncludeCycleError", "RuleError",
+    "apply_audiences", "compile_corpus", "compile_docs", "compile_rules",
+    "detect_cycles", "include_order", "load_docs", "load_reference",
+    "merge_block", "render_markdown",
+    # what a corpus declares about itself
+    "DROP", "KEEP", "Kind", "Profile", "Reference", "Target",
+    # finding a ruleset on disk
+    "INSTALLED_RULESETS", "RULESET_PATH_ENV", "RULESET_SEARCH_PATH", "TOOLSET_ROOT",
+    "WORKING_RULESETS", "find_ruleset", "read_version", "resolve_ruleset_dir",
+    "search_path",
+    # writing output
+    "BOOK_CSS", "BOOK_ROOT", "build_book", "build_data", "build_snippets",
+    "build_target", "snippet_html", "text_for",
 ]

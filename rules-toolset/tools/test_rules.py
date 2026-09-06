@@ -7,6 +7,7 @@
 # each test below is a way that invariant could quietly break.
 
 import argparse
+import dataclasses
 import json
 import shutil
 import sys
@@ -84,8 +85,28 @@ def with_temp_rules(files: dict):
     return tmp
 
 
-def compile_rules(d, root_id="rulebook"):
-    return compile_docs(d, root_id=root_id)
+def corpus_of(*dirs, profile=None, base_dir=None):
+    """Compile a throwaway corpus, and attach the two forms most of the
+    tests below want to talk about: `html` is the snippet form (every
+    audience block dropped, includes removed, rendered) and `linked` is
+    the book form (every audience block kept, includes intact). The
+    compiler itself keeps one marked-up form and lets each target apply
+    its own policy, which is the only thing that works once there are
+    more than two targets; these two are the default profile's."""
+    corpus = rulesc.compile_corpus(*dirs, profile=profile, base_dir=base_dir)
+    book = corpus.profile.targets.get("book")
+    snippets = corpus.profile.targets.get("snippets")
+    for doc_id in corpus.compiled:
+        if snippets is not None:
+            corpus.compiled[doc_id]["html"] = rulesc.snippet_html(corpus, doc_id, snippets)
+        if book is not None:
+            corpus.compiled[doc_id]["linked"] = rulesc.text_for(corpus, doc_id, book)
+    return corpus
+
+
+def compile_rules(d, root_id="rulebook", profile=None):
+    corpus = corpus_of(d, profile=profile)
+    return corpus.docs, corpus.compiled, corpus.errors
 
 
 # ---------------------------------------------------------------------
@@ -96,23 +117,33 @@ if not RULES_DIR.exists() and not BOOK_DIR.exists():
           "(expected for an empty ruleset like a freshly-created 'ico').")
     rules = {}
 else:
-    rules, compiled, errors = compile_docs(RULES_DIR, BOOK_DIR)
+    # Whatever the named corpus declares about itself, rather than what
+    # a ruleset happens to declare -- so this section is an integration
+    # test for any corpus, not only for one shaped like demo.
+    REAL_PROFILE = rulesc.Profile.load(RULESET_DIR)
+    real = corpus_of(RULES_DIR, BOOK_DIR, profile=REAL_PROFILE, base_dir=RULESET_DIR)
+    rules, compiled, errors = real.docs, real.compiled, real.errors
     check("real rules compile with no errors", not errors, str(errors))
 
-    warnings, lint_errors = lint.run_all(rules)
+    warnings, lint_errors = lint.run_all(rules, REAL_PROFILE)
     check("real rules pass lint", not lint_errors, str(lint_errors))
 
-    check("every rule (kind=rule) has a non-empty summary",
-          all(r.summary.strip() for r in rules.values() if r.kind == "rule"))
+    check("every document whose kind requires a summary has one",
+          all(r.summary.strip() for r in real.local()
+              if REAL_PROFILE.kinds[r.kind].summary == "required"))
 
-    check("book root exists", "rulebook" in rules)
+    if REAL_PROFILE.roots:
+        root = REAL_PROFILE.roots[0]
+        check("book root exists", root in rules)
 
-    order = include_order(rules, "rulebook")
-    check("include order covers every document", len(order) == len(rules),
-          f"{len(order)} in order vs {len(rules)} docs")
-    check("root is first in include order", order[0] == ("rulebook", 0), str(order[:1]))
-    check("rules nest two deep (root > chapter > rule)",
-          any(d == 2 for _, d in order), str(order))
+        order = include_order(rules, root)
+        check("include order covers every document", len(order) == len(real.local()),
+              f"{len(order)} in order vs {len(real.local())} docs")
+        check("root is first in include order", order[0] == (root, 0), str(order[:1]))
+        check("documents nest two deep (root > chapter > document)",
+              any(d == 2 for _, d in order), str(order))
+    else:
+        print("  (no book root declared, so the include-order checks do not apply)")
 
     check("no unresolved interpolation leaks into output",
           all("{{" not in c["html"] for c in compiled.values()))
@@ -332,7 +363,7 @@ Speed is 9 tiles.
 r, c, e = compile_rules(tmp)
 lint_warns, lint_errs = lint.run_all(r)
 check("prose contradicting a mechanic is at least a WARNING",
-      any("matches no mechanic" in x for x in lint_warns), str(lint_warns))
+      any("matches no value" in x for x in lint_warns), str(lint_warns))
 shutil.rmtree(tmp)
 
 tmp = with_temp_rules({
@@ -586,7 +617,7 @@ Shared body.
 try:
     r, c, e = compile_rules(tmp, root_id="root")
     check("diamond include is not treated as a cycle", True)
-    warns, errs = lint.run_all(r, root_id="root")
+    warns, errs = lint.run_all(r, roots=("root",))
     check("diamond include produces a duplicate warning",
           any("included 2 times" in w for w in warns), str(warns))
 except IncludeCycleError as ex:
@@ -753,7 +784,7 @@ A goblin has {{ mechanics.core_hit_points }} core hit points.
 })
 r, c, e = compile_rules(tmp, root_id="root")
 check("kind: creature is accepted", not e, str(e))
-warnings, lint_errs = lint.run_all(r, root_id="root")
+warnings, lint_errs = lint.run_all(r, roots=("root",))
 check("a creature nothing links to is not an orphan warning",
       not any("discoverable" in w for w in warnings), str(warnings))
 check("a creature still gets the drift check", not lint_errs, str(lint_errs))
@@ -789,7 +820,8 @@ try:
     compile_rules(tmp, root_id="goblin")
     check("an unknown kind is still rejected", False)
 except RuleError as ex:
-    check("an unknown kind is still rejected", "must be one of" in str(ex), str(ex))
+    check("an unknown kind is still rejected", "is not declared by this corpus" in str(ex),
+          str(ex))
 shutil.rmtree(tmp)
 # ---------------------------------------------------------------------
 print("\nTables:")
@@ -835,7 +867,7 @@ check("a key becomes a sentence-cased label", "<td>Great axe</td>" in html, html
 check("a boolean cell reads as yes", "<td>yes</td>" in html, html)
 check("a field a row lacks reads as a dash", chr(8212) in html, html)
 check("the first column header is settable", "<th>Weapon</th>" in html, html)
-_, lint_errs = lint.run_all(r, root_id="w")
+_, lint_errs = lint.run_all(r, roots=("w",))
 check("a generated table does not trip the drift linter", not lint_errs, str(lint_errs))
 shutil.rmtree(tmp)
 
@@ -1058,11 +1090,13 @@ mechanics:
 Alpha body.
 """,
 })
-r, c, e = compile_rules(tmp)
+corpus = corpus_of(tmp)
+r, c, e = corpus.docs, corpus.compiled, corpus.errors
+stamped = dataclasses.replace(corpus, version="2.0.1")
 with tempfile.TemporaryDirectory() as td:
     td = Path(td)
-    rulesc.build_mechanics(r, td / "m.json", version="2.0.1")
-    rulesc.build_snippets(r, c, td / "s.json", version="2.0.1")
+    rulesc.build_target(stamped, "mechanics", td / "m.json")
+    rulesc.build_target(stamped, "snippets", td / "s.json")
     m = json.loads((td / "m.json").read_text())
     sn = json.loads((td / "s.json").read_text())
     check("mechanics.json is stamped", m["_version"] == "2.0.1", str(list(m)))
@@ -1071,8 +1105,8 @@ with tempfile.TemporaryDirectory() as td:
     check("a stamp is told from a document by its leading underscore",
           all(k.startswith("_") or "id" in sn[k] for k in sn), str(list(sn)))
 
-    rulesc.build_mechanics(r, td / "m2.json")
-    rulesc.build_snippets(r, c, td / "s2.json")
+    rulesc.build_target(corpus, "mechanics", td / "m2.json")
+    rulesc.build_target(corpus, "snippets", td / "s2.json")
     check("an unversioned build carries no stamp at all",
           "_version" not in json.loads((td / "m2.json").read_text())
           and "_version" not in json.loads((td / "s2.json").read_text()))
@@ -1084,49 +1118,710 @@ print("\nBuild outputs:")
 if not rules:
     print(f"  SKIPPED — no '{RULESET_NAME}' ruleset content to build outputs from.")
 else:
+    # By shape rather than by name: a corpus names its targets, and only
+    # a ruleset happens to call them book, snippets and mechanics.
+    def target_named(shape):
+        return next((n for n, t in REAL_PROFILE.targets.items() if t.shape == shape), None)
+
+    DATA_T, SNIP_T, BOOK_T = (target_named(s) for s in ("data", "snippets", "book"))
+
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        n = rulesc.build_mechanics(rules, td / "m.json")
-        payload = json.loads((td / "m.json").read_text())
-        check("mechanics.json contains no prose",
-              all(not isinstance(v, str) or "<p>" not in v
-                  for rule in payload["rules"].values() for v in rule.values()))
-        check("mechanics.json covers every rule that has mechanics",
-              set(payload["rules"]) == {r.id for r in rules.values() if r.mechanics})
 
-        n2 = rulesc.build_snippets(rules, compiled, td / "s.json")
-        snips = json.loads((td / "s.json").read_text())
-        check("snippets.json has one entry per rule",
-              len([k for k in snips if not k.startswith("_")]) == len(rules))
-        check("every snippet carries a book anchor",
-              all(s["book_anchor"].startswith("#rule-") for s in snips.values()))
-        check("every snippet has both plain and html summary",
-              all(s.get("summary") and s.get("summary_html") for s in snips.values()))
+        if DATA_T:
+            target = REAL_PROFILE.targets[DATA_T]
+            n = rulesc.build_target(real, DATA_T, td / "m.json")
+            payload = json.loads((td / "m.json").read_text())
+            check("the data output contains no prose",
+                  all(not isinstance(v, str) or "<p>" not in v
+                      for doc in payload["rules"].values() for v in doc.values()))
+            check("the data output covers every document that has data",
+                  set(payload["rules"]) == {
+                      d.id for d in real.local()
+                      if target.selects(d, REAL_PROFILE)
+                      and any(d.data.get(b) for b in target.blocks)})
 
-        size, book_order = rulesc.build_book(rules, compiled, td / "b.html")
-        book = (td / "b.html").read_text()
-        # The root document's title becomes the book's <h1>, so it gets no
-        # section anchor of its own — every OTHER document must have one.
-        check("book contains an anchor for every non-root document",
-              all(f'id="rule-{r.id}"' in book for r in rules.values() if r.id != "rulebook"))
-        check("book TOC is nested (chapters contain rules)", "<ol><ol>" in book or "</li><ol>" in book,
-              "expected nested <ol> in contents")
-        check("book renders documents in include order",
-              [d for d, _ in book_order] == [d for d, _ in include_order(rules, "rulebook")])
-        check("book has no unresolved templates", "{{" not in book)
-        rulesc.build_book(rules, compiled, td / "bv.html", version="9.9.9")
-        check("the book shows the version to a reader",
-              "Version 9.9.9" in (td / "bv.html").read_text(encoding="utf-8"))
-        # mechanics: is a machine concern -- the server reads it and the
-        # linter proves the prose matches it. The book prints the prose,
-        # which already carries every value by interpolation.
-        check("book does not print a mechanics table",
-              "Mechanics reference" not in book and 'class="mechanics"' not in book)
-        check("mechanics values still reach the book through the prose",
-              any(str(v) in book
-                  for r in rules.values()
-                  for v in r.mechanics.values()
-                  if isinstance(v, int) and not isinstance(v, bool)))
+        if SNIP_T:
+            target = REAL_PROFILE.targets[SNIP_T]
+            n2 = rulesc.build_target(real, SNIP_T, td / "s.json")
+            snips = json.loads((td / "s.json").read_text())
+            entries = {k: v for k, v in snips.items() if not k.startswith("_")}
+            check("the snippet output has one entry per document it carries",
+                  len(entries) == len([d for d in real.local()
+                                       if target.selects(d, REAL_PROFILE)]))
+            check("every snippet carries a book anchor",
+                  all(s["book_anchor"].startswith("#rule-") for s in entries.values()))
+            check("every snippet has both plain and html summary",
+                  all(s.get("summary") and s.get("summary_html")
+                      for k, s in entries.items()
+                      if REAL_PROFILE.kinds[real.docs[k].kind].summary == "required"))
+
+        if BOOK_T and REAL_PROFILE.roots:
+            target = REAL_PROFILE.targets[BOOK_T]
+            root = target.root or REAL_PROFILE.roots[0]
+            size, book_order = rulesc.build_target(real, BOOK_T, td / "b.html")
+            book = (td / "b.html").read_text()
+            rendered = [d for d in real.local() if target.selects(d, REAL_PROFILE)]
+            # The root document's title becomes the book's <h1>, so it gets no
+            # section anchor of its own — every OTHER document must have one.
+            check("book contains an anchor for every non-root document",
+                  all(f'id="rule-{d.id}"' in book for d in rendered if d.id != root))
+            check("book TOC is nested (chapters contain documents)",
+                  "<ol><ol>" in book or "</li><ol>" in book,
+                  "expected nested <ol> in contents")
+            check("book renders documents in include order",
+                  [d for d, _ in book_order]
+                  == [d for d, _ in include_order(rules, root)
+                      if target.selects(rules[d], REAL_PROFILE)])
+            check("book has no unresolved templates", "{{" not in book)
+            check("book has no unresolved directives", "{%" not in book)
+            rulesc.build_target(dataclasses.replace(real, version="9.9.9"),
+                                BOOK_T, td / "bv.html")
+            check("the book shows the version to a reader",
+                  "Version 9.9.9" in (td / "bv.html").read_text(encoding="utf-8"))
+            # A data block is a machine concern -- the server reads it and
+            # the linter proves the prose matches it. The book prints the
+            # prose, which already carries every value by interpolation.
+            check("book does not print a data table",
+                  "Mechanics reference" not in book and 'class="mechanics"' not in book)
+            check("data values still reach the book through the prose",
+                  any(str(v) in book
+                      for d in rendered
+                      for block in d.data.values()
+                      if isinstance(block, dict)
+                      for v in block.values()
+                      if isinstance(v, int) and not isinstance(v, bool)))
+
+
+# ---------------------------------------------------------------------
+print("\nCorpus profiles:")
+
+check("a corpus with no corpus.yaml gets the default profile",
+      rulesc.Profile.load(Path(tempfile.gettempdir())) == rulesc.Profile.default())
+check("the default profile is the old built-in behaviour",
+      sorted(rulesc.Profile.default().kinds) == ["creature", "rule", "section"]
+      and rulesc.Profile.default().audiences == ("book-only",)
+      and sorted(rulesc.Profile.default().targets) == ["book", "mechanics", "snippets"])
+
+ADVENTURE = rulesc.Profile.from_mapping({
+    "kinds": {
+        "section": {"summary": "optional", "data": [], "discovery": "include"},
+        "scene": {"data": ["encounter"], "discovery": "include",
+                  "refs": ["encounter.foes", "encounter.branches.*.to"]},
+        "npc": {"data": ["mechanics"], "discovery": "lookup", "audience": "gm-only"},
+    },
+    "audiences": ["gm-only"],
+    "roots": [],
+    "lint": {"unincluded": False, "orphans": False},
+    "targets": {
+        "module": {"shape": "book", "root": "top", "audiences": {"default": "keep"}},
+        "handout": {"shape": "book", "root": "top",
+                    "select": {"kind": ["section", "scene"]},
+                    "audiences": {"default": "drop"}},
+        "engine": {"shape": "data", "blocks": ["mechanics", "encounter"]},
+    },
+})
+check("a corpus can declare kinds the toolset has never heard of",
+      sorted(ADVENTURE.kinds) == ["npc", "scene", "section"])
+
+tmp = with_temp_rules({
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+encounter:
+  foes: [n]
+---
+Body.
+""",
+    "n.md": """---
+id: n
+title: N
+kind: npc
+summary: An NPC.
+mechanics:
+  threat: 3
+---
+Stat block.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("documents of a declared kind compile", not corpus.errors, str(corpus.errors))
+check("a kind's declared block lands under its own name",
+      list(corpus.docs["s"].data) == ["encounter"], str(corpus.docs["s"].data))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+mechanics:
+  threat: 3
+---
+Body.
+""",
+})
+try:
+    rulesc.compile_corpus(tmp, profile=ADVENTURE)
+    check("a block the kind does not declare is an error", False)
+except RuleError as ex:
+    check("a block the kind does not declare is an error",
+          "is not a data block of kind" in str(ex), str(ex))
+shutil.rmtree(tmp)
+
+for bad, why in (
+    ({"targets": {"t": {"shape": "leaflet"}}}, "an unknown shape"),
+    ({"targets": {"t": {"shape": "book"}}}, "a prose target with no audience default"),
+    ({"audiences": ["a"], "targets": {"t": {"shape": "book",
+                                           "audiences": {"default": "maybe"}}}},
+     "an audience action that is not keep or drop"),
+    ({"kinds": {"r": {"audience": "gm-only"}}}, "a kind audience the corpus never declared"),
+    ({"lint": {"hardcoded": False}}, "switching off the hardcoded-number check"),
+):
+    try:
+        rulesc.Profile.from_mapping(bad)
+        check(f"{why} is rejected", False)
+    except RuleError as ex:
+        check(f"{why} is rejected", True)
+
+
+# ---------------------------------------------------------------------
+print("\nAudiences against several targets:")
+
+tmp = with_temp_rules({
+    "top.md": """---
+id: top
+title: Top
+kind: section
+---
+{% include s %}
+{% include n %}
+""",
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+---
+Read this aloud.
+
+{% gm-only %}
+And this only if you are running it.
+{% endgm-only %}
+""",
+    "n.md": """---
+id: n
+title: N
+kind: npc
+summary: An NPC.
+---
+A whole document for the GM.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("a corpus with two audiences compiles", not corpus.errors, str(corpus.errors))
+with tempfile.TemporaryDirectory() as td:
+    td = Path(td)
+    rulesc.build_target(corpus, "module", td / "module.html")
+    rulesc.build_target(corpus, "handout", td / "handout.html")
+    module = (td / "module.html").read_text(encoding="utf-8")
+    handout = (td / "handout.html").read_text(encoding="utf-8")
+    check("a target that keeps a tag keeps its content",
+          "only if you are running it" in module)
+    check("a target that drops a tag drops its content",
+          "only if you are running it" not in handout)
+    check("content outside any tag survives in both",
+          "Read this aloud" in module and "Read this aloud" in handout)
+    check("no audience markers leak into either output",
+          "{%" not in module and "{%" not in handout)
+    check("a kind's default audience carries the whole document",
+          "A whole document for the GM" in module
+          and "A whole document for the GM" not in handout)
+    check("a document dropped by its kind's audience is absent, not empty",
+          'id="rule-n"' in module and 'id="rule-n"' not in handout)
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "a.md": """---
+id: a
+title: A
+summary: A rule.
+---
+Body.
+
+{% gm-only %}
+Not a tag this corpus declares.
+{% endgm-only %}
+""",
+})
+r, c, e = compile_rules(tmp, root_id="a")
+check("an undeclared audience tag is an error, not literal text",
+      any("not a directive this corpus understands" in x for x in e), str(e))
+check("and the error names the directive it did not understand",
+      any("{% gm-only %}" in x for x in e), str(e))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "a.md": """---
+id: a
+title: A
+summary: A rule.
+---
+{% book-only %}
+{% gm-only %}
+{% endbook-only %}
+{% endgm-only %}
+""",
+})
+two_tags = rulesc.Profile.from_mapping({"audiences": ["book-only", "gm-only"]})
+corpus = rulesc.compile_corpus(tmp, profile=two_tags)
+check("audience blocks that overlap rather than nest are an error",
+      any("still open" in x for x in corpus.errors), str(corpus.errors))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
+print("\nData blocks other than mechanics:")
+
+tmp = with_temp_rules({
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+encounter:
+  foes: []
+  difficulty: 14
+  checks:
+    - id: spot
+      target: 12
+    - id: swim
+      target: 9
+---
+Look first against {{ encounter.checks.spot.target }}, then wade
+against {{ encounter.checks.swim.target }}. The whole thing is
+difficulty {{ encounter.difficulty }}, and the first of those is
+also reachable as {{ encounter.checks.0.target }}.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("a block named something other than mechanics interpolates",
+      not corpus.errors, str(corpus.errors))
+html = rulesc.snippet_html(corpus, "s", ADVENTURE.targets["module"])
+check("a list entry is addressed by its own id",
+      "against 12" in html and "against 9" in html, html)
+check("positional addressing works too", "also reachable as 12" in html, html)
+_, lint_errs = lint.run_all(corpus.docs, ADVENTURE)
+check("a block named something else is still free of drift", not lint_errs, str(lint_errs))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+encounter:
+  foes: []
+  checks:
+    - id: spot
+      target: 14
+---
+Roll against DC 14 to spot them.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+_, lint_errs = lint.run_all(corpus.docs, ADVENTURE)
+check("drift detection reaches a number inside a list in any block",
+      any("encounter.checks.spot.target" in x for x in lint_errs), str(lint_errs))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
+print("\nInheritance (based_on):")
+
+tmp = with_temp_rules({
+    "base.md": """---
+id: base
+title: Base
+kind: npc
+summary: A base.
+mechanics:
+  threat: 2
+  attack: 5
+  skills: { stealth: 4, spot: 2 }
+  gear: [sling]
+---
+Base body.
+""",
+    "child.md": """---
+id: child
+title: Child
+kind: npc
+summary: A child.
+based_on: base
+mechanics:
+  threat: 4
+  skills: { spot: 6 }
+  gear: [sword]
+---
+Child body.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+merged = corpus.docs["child"].mechanics
+check("based_on: a declared scalar replaces", merged["threat"] == 4)
+check("based_on: an undeclared scalar is inherited", merged["attack"] == 5)
+check("based_on: nested maps merge key by key",
+      merged["skills"] == {"stealth": 4, "spot": 6}, str(merged["skills"]))
+check("based_on: a list replaces wholesale", merged["gear"] == ["sword"], str(merged["gear"]))
+check("based_on: the parent is not modified",
+      corpus.docs["base"].mechanics["threat"] == 2)
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "child.md": """---
+id: child
+title: Child
+kind: npc
+summary: A child.
+based_on: nobody
+---
+Body.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("based_on naming a document that does not exist is an error",
+      any("based_on names 'nobody'" in x for x in corpus.errors), str(corpus.errors))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "a.md": """---
+id: a
+title: A
+kind: npc
+summary: A.
+based_on: b
+---
+A.
+""",
+    "b.md": """---
+id: b
+title: B
+kind: npc
+summary: B.
+based_on: a
+---
+B.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("a based_on cycle is an error rather than a hang",
+      any("based_on is a cycle" in x for x in corpus.errors), str(corpus.errors))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "base.md": """---
+id: base
+title: Base
+kind: npc
+summary: A base.
+mechanics:
+  stamina: 7
+---
+Base.
+""",
+    "child.md": """---
+id: child
+title: Child
+kind: npc
+summary: A child.
+based_on: base
+---
+It has 7 stamina.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+_, lint_errs = lint.run_all(corpus.docs, ADVENTURE)
+check("drift detection catches prose restating an INHERITED value",
+      any(x.startswith("child:") for x in lint_errs), str(lint_errs))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
+print("\nDeclared frontmatter references (refs):")
+
+tmp = with_temp_rules({
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+encounter:
+  foes: [n, nobody]
+  branches:
+    - when: x
+      to: elsewhere
+---
+Body.
+""",
+    "n.md": """---
+id: n
+title: N
+kind: npc
+summary: An NPC.
+---
+Body.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("a declared ref that does not resolve is an error",
+      any("encounter.foes names 'nobody'" in x for x in corpus.errors), str(corpus.errors))
+check("a wildcard reaches into a list of maps",
+      any("encounter.branches.*.to names 'elsewhere'" in x for x in corpus.errors),
+      str(corpus.errors))
+check("a declared ref that does resolve is not an error",
+      not any("names 'n'" in x for x in corpus.errors), str(corpus.errors))
+shutil.rmtree(tmp)
+
+tmp = with_temp_rules({
+    "s.md": """---
+id: s
+title: S
+kind: scene
+summary: A scene.
+encounter:
+  foes: []
+---
+Body.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+check("a declared ref path that is simply absent is not an error",
+      not corpus.errors, str(corpus.errors))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
+print("\nReferences into another corpus:")
+
+
+def built_corpus(files, into: Path, version=None):
+    """Build a throwaway corpus's outputs into `into`, the way a
+    referenced corpus arrives: through its build directory."""
+    src = with_temp_rules(files)
+    c = rulesc.compile_corpus(src, version=version)
+    assert not c.errors, c.errors
+    into.mkdir(parents=True, exist_ok=True)
+    rulesc.build_target(c, "snippets", into / "snippets.json")
+    rulesc.build_target(c, "mechanics", into / "mechanics.json")
+    shutil.rmtree(src)
+
+
+with tempfile.TemporaryDirectory() as td:
+    td = Path(td)
+    built_corpus({
+        "goblin.md": """---
+id: goblin
+title: Goblin
+kind: creature
+summary: A goblin.
+mechanics:
+  typical_number: 6
+  stamina: 5
+---
+A goblin.
+""",
+    }, td / "other" / "build", version="1.2.3")
+
+    referring = rulesc.Profile.from_mapping({
+        "kinds": {"npc": {"data": ["mechanics"], "discovery": "lookup"}},
+        "audiences": [],
+        "roots": [],
+        "lint": {"unincluded": False, "orphans": False},
+        "references": [{"path": "other/build",
+                        "href": "../other/book.html#rule-{id}"}],
+        "targets": {"snippets": {"shape": "snippets", "audiences": {"default": "drop"}},
+                    "data": {"shape": "data", "blocks": ["mechanics"]}},
+    })
+
+    src = with_temp_rules({
+        "boss.md": """---
+id: boss
+title: Boss
+kind: npc
+summary: A boss.
+based_on: goblin
+mechanics:
+  stamina: 9
+---
+It leads {{ goblin:mechanics.typical_number }} of them, and it is a
+[[goblin]] underneath.
+""",
+    })
+    corpus = rulesc.compile_corpus(src, profile=referring, base_dir=td)
+    check("a corpus compiles against another corpus's build outputs",
+          not corpus.errors, str(corpus.errors))
+    check("an external document joins the same flat id namespace",
+          "goblin" in corpus.docs and corpus.docs["goblin"].external)
+    check("interpolation reaches across the seam with no new syntax",
+          "leads 6 of them" in rulesc.snippet_html(
+              corpus, "boss", referring.targets["snippets"]))
+    html = rulesc.snippet_html(corpus, "boss", referring.targets["snippets"])
+    check("a cross-corpus link uses the declared href",
+          'href="../other/book.html#rule-goblin"' in html, html)
+    check("a cross-corpus link is marked as external",
+          'class="external-ref"' in html, html)
+    check("based_on reaches across the seam",
+          corpus.docs["boss"].mechanics == {"typical_number": 6, "stamina": 9},
+          str(corpus.docs["boss"].mechanics))
+    check("the referenced version is recorded",
+          corpus.references[0]["version"] == "1.2.3", str(corpus.references))
+
+    with tempfile.TemporaryDirectory() as out:
+        out = Path(out)
+        rulesc.build_target(corpus, "snippets", out / "s.json")
+        rulesc.build_target(corpus, "data", out / "d.json")
+        s = json.loads((out / "s.json").read_text(encoding="utf-8"))
+        d = json.loads((out / "d.json").read_text(encoding="utf-8"))
+        check("the output says which version it was built against",
+              s["_references"][0]["version"] == "1.2.3"
+              and d["_references"][0]["version"] == "1.2.3")
+        check("an external document is never emitted as one of ours",
+              "goblin" not in s and "goblin" not in d["rules"])
+        check("a document records what it was based on",
+              s["boss"]["based_on"] == "goblin")
+        check("a document records the external documents it links to",
+              s["boss"]["external"] == ["goblin"])
+    shutil.rmtree(src)
+
+    src = with_temp_rules({
+        "boss.md": """---
+id: boss
+title: Boss
+kind: npc
+summary: A boss.
+---
+Nothing here is [[missing-entirely]].
+""",
+    })
+    corpus = rulesc.compile_corpus(src, profile=referring, base_dir=td)
+    check("an unresolvable cross-corpus reference is an error, not a blank",
+          any("does not exist" in x for x in corpus.errors), str(corpus.errors))
+    shutil.rmtree(src)
+
+    src = with_temp_rules({
+        "goblin.md": """---
+id: goblin
+title: Our Own Goblin
+kind: npc
+summary: A goblin of our own.
+---
+Body.
+""",
+    })
+    corpus = rulesc.compile_corpus(src, profile=referring, base_dir=td)
+    check("an id in both corpora is an error rather than a silent shadow",
+          any("duplicate document id 'goblin'" in x for x in corpus.errors),
+          str(corpus.errors))
+    shutil.rmtree(src)
+
+    unbuilt = rulesc.Profile.from_mapping({
+        "references": [{"path": "nowhere/build"}],
+    })
+    src = with_temp_rules({
+        "rulebook.md": """---
+id: rulebook
+title: Book
+kind: section
+---
+Body.
+""",
+    })
+    try:
+        rulesc.compile_corpus(src, profile=unbuilt, base_dir=td)
+        check("a reference to something unbuilt says so", False)
+    except RuleError as ex:
+        check("a reference to something unbuilt says so",
+              "has not been built" in str(ex), str(ex))
+    shutil.rmtree(src)
+
+
+# ---------------------------------------------------------------------
+print("\nLint against many roots, or none:")
+
+tmp = with_temp_rules({
+    "one.md": """---
+id: one
+title: One
+kind: scene
+summary: A scene.
+---
+Body.
+""",
+    "two.md": """---
+id: two
+title: Two
+kind: scene
+summary: A scene.
+---
+Body.
+""",
+})
+corpus = rulesc.compile_corpus(tmp, profile=ADVENTURE)
+warns, errs = lint.run_all(corpus.docs, ADVENTURE)
+check("a corpus with no roots is not told its book root is missing",
+      not any("book root" in w for w in warns), str(warns))
+check("a corpus with no roots gets no reachability warnings at all",
+      not any("not included anywhere" in w for w in warns), str(warns))
+check("the hardcoded-number check still runs with no roots", errs == [], str(errs))
+
+# The same corpus with the reachability check left on, to show that
+# "no roots" is what skips it rather than the check being gone.
+CHECKED = dataclasses.replace(ADVENTURE, lint={"orphans": False})
+warns, _ = lint.run_all(corpus.docs, CHECKED, roots=("one", "two"))
+check("reachability from several roots is their union",
+      not any("not included anywhere" in w for w in warns), str(warns))
+warns, _ = lint.run_all(corpus.docs, CHECKED, roots=("one",))
+check("a document under no root is still reported",
+      any(w.startswith("two:") for w in warns), str(warns))
+shutil.rmtree(tmp)
+
+
+# ---------------------------------------------------------------------
+print("\nThe supplement corpus (the worked example):")
+
+SUPPLEMENT = rulesc.find_ruleset("demo-supplement")[0]
+if SUPPLEMENT is None or not (SUPPLEMENT / "build" / "data.json").exists():
+    print("  SKIPPED — demo-supplement is not built; run "
+          "python3 tools/build.py demo && python3 tools/build.py demo-supplement")
+else:
+    profile = rulesc.Profile.load(SUPPLEMENT)
+    corpus = rulesc.compile_corpus(SUPPLEMENT / "rules", SUPPLEMENT / "book",
+                                   profile=profile, base_dir=SUPPLEMENT)
+    check("the supplement compiles with no errors", not corpus.errors, str(corpus.errors))
+    _, lint_errs = lint.run_all(corpus.docs, profile)
+    check("the supplement passes lint", not lint_errs, str(lint_errs))
+    check("it declares kinds of its own",
+          sorted(profile.kinds) == ["encounter", "foe", "note", "section"])
+    check("it declares two audiences and four targets",
+          len(profile.audiences) == 2 and len(profile.targets) == 4)
+    data = json.loads((SUPPLEMENT / "build" / "data.json").read_text(encoding="utf-8"))
+    check("a multi-block data output names its blocks",
+          data["_blocks"] == ["mechanics", "setup"], str(data.get("_blocks")))
+    check("a multi-block data output keys each document by block name",
+          set(data["rules"]["river-crossing"]) == {"setup"},
+          str(data["rules"]["river-crossing"]))
+    book = (SUPPLEMENT / "build" / "book.html").read_text(encoding="utf-8")
+    handout = (SUPPLEMENT / "build" / "handout.html").read_text(encoding="utf-8")
+    check("the book keeps GM material", "Running it" in book)
+    check("the handout keeps none of it", "Running it" not in handout)
+    check("the handout omits whole GM documents",
+          'id="rule-gm-notes"' in book and 'id="rule-gm-notes"' not in handout)
+    check("no directive markers survive into either", "{%" not in book and "{%" not in handout)
 
 
 print(f"\n{passed} passed, {failed} failed")

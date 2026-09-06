@@ -60,9 +60,26 @@ def read_version(ruleset_dir: Path):
     return version
 
 
+# A project that builds the same ruleset every day should not have to
+# spell out where it is every day. Anything listed here is searched
+# after the two built-in places, so it can add a location but never
+# shadow one.
+RULESET_PATH_ENV = "RULESET_PATH"
+
+
+def search_path():
+    """Every directory a ruleset name is looked up in, with a label for
+    each, nearest first."""
+    roots = [(INSTALLED_RULESETS, "installed"), (WORKING_RULESETS, "working")]
+    for entry in os.environ.get(RULESET_PATH_ENV, "").split(os.pathsep):
+        if entry.strip():
+            roots.append((Path(entry.strip()), RULESET_PATH_ENV))
+    return tuple(roots)
+
+
 def find_ruleset(name: str):
     """Return (path, where) for a ruleset name, or (None, None)."""
-    for root, where in zip(RULESET_SEARCH_PATH, ("installed", "working")):
+    for root, where in search_path():
         candidate = root / name
         if candidate.exists():
             return candidate, where

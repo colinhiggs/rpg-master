@@ -35,37 +35,44 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rulesc import (
-    IncludeCycleError, RuleError,
-    RULESET_SEARCH_PATH, BOOK_ROOT,
-    compile_docs, lint, read_version, resolve_ruleset_dir,
-    build_book, build_mechanics, build_snippets,
+    IncludeCycleError, Profile, RuleError,
+    build_target, compile_corpus, lint, read_version, resolve_ruleset_dir,
+    search_path,
 )
+
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compile a ruleset's rules/ + book/ into book.html, snippets.json, mechanics.json."
+        description="Compile a ruleset into the outputs its corpus profile declares "
+                    "(by default book.html, snippets.json and mechanics.json)."
     )
     parser.add_argument(
         "ruleset", nargs="?", default="demo",
-        help="Ruleset name, looked up in %s then %s (e.g. 'demo', 'ico'). "
-             "Default: demo." % RULESET_SEARCH_PATH,
+        help="Ruleset name, looked up in the installed and working ruleset "
+             "directories and in anything on $RULESET_PATH (e.g. 'demo', 'ico'). "
+             "Default: demo.",
     )
     parser.add_argument(
         "--path", default=None,
         help="Explicit path to a ruleset directory (containing rules/ and book/), overrides the name.",
+    )
+    parser.add_argument(
+        "--target", action="append", default=None, metavar="NAME",
+        help="Build only this target. Repeatable. Default: every target the "
+             "corpus profile declares.",
     )
     args = parser.parse_args()
 
     ruleset_dir, where = resolve_ruleset_dir(args)
     if ruleset_dir is None:
         print("FATAL: no ruleset '%s' found. Looked in:" % args.ruleset)
-        for root in RULESET_SEARCH_PATH:
-            print("  %s" % root)
-        print("Use --path to build a ruleset somewhere else entirely.")
+        for root, label in search_path():
+            print("  %s (%s)" % (root, label))
+        print("Use --path to build a ruleset somewhere else entirely, or put its "
+              "parent directory on $RULESET_PATH.")
         return 1
     rules_dir = ruleset_dir / "rules"
     book_dir = ruleset_dir / "book"
-    build_dir = ruleset_dir / "build"
 
     if not ruleset_dir.exists():
         print(f"FATAL: ruleset directory not found: {ruleset_dir}")
@@ -75,16 +82,23 @@ def main():
               "is this a ruleset directory?")
         return 1
 
-    build_dir.mkdir(exist_ok=True)
-
     try:
         version = read_version(ruleset_dir)
+        profile = Profile.load(ruleset_dir)
     except RuleError as e:
         print(f"FATAL: {e}")
         return 1
 
+    unknown = set(args.target or ()) - set(profile.targets)
+    if unknown:
+        print("FATAL: no target %s in this corpus (it has %s)"
+              % (", ".join(sorted(unknown)), ", ".join(sorted(profile.targets))))
+        return 1
+    wanted = args.target or list(profile.targets)
+
     try:
-        docs, compiled, errors = compile_docs(rules_dir, book_dir, root_id=BOOK_ROOT)
+        corpus = compile_corpus(rules_dir, book_dir, profile=profile,
+                                base_dir=ruleset_dir, version=version)
     except IncludeCycleError as e:
         # Loud and specific: this one can't be worked around, and the
         # message names the exact chain to break.
@@ -94,8 +108,9 @@ def main():
         print(f"FATAL: {e}")
         return 1
 
-    warnings, lint_errors = lint.run_all(docs, root_id=BOOK_ROOT)
-    all_errors = errors + lint_errors
+    lint_warnings, lint_errors = lint.run_all(corpus.docs, profile)
+    warnings = corpus.warnings + lint_warnings
+    all_errors = corpus.errors + lint_errors
 
     for w in warnings:
         print(f"  warning: {w}")
@@ -106,16 +121,37 @@ def main():
         print(f"\nBuild FAILED: {len(all_errors)} error(s). No output written.")
         return 1
 
-    book_size, order = build_book(docs, compiled, build_dir / "book.html", version=version)
-    n_snippets = build_snippets(docs, compiled, build_dir / "snippets.json", version=version)
-    n_mech = build_mechanics(docs, build_dir / "mechanics.json", version=version)
+    written = []
+    for name in wanted:
+        target = profile.targets[name]
+        if not target.output:
+            print(f"  skipped '{name}': the profile declares no output path for it")
+            continue
+        out_path = ruleset_dir / target.output
+        try:
+            result = build_target(corpus, name, out_path=out_path)
+        except RuleError as e:
+            print(f"FATAL: target '{name}': {e}")
+            return 1
+        if target.shape == "book":
+            size, order = result
+            detail = f"{size:,} bytes, {len(order)} documents in include order"
+        elif target.shape == "snippets":
+            detail = f"{result} snippets"
+        else:
+            detail = f"{result} documents with data"
+        written.append((out_path, detail))
 
-    print(f"\nBuilt '{ruleset_dir.name}' {version or '(unversioned)'} from {len(docs)} documents"
+    n_local = len(corpus.local())
+    print(f"\nBuilt '{ruleset_dir.name}' {version or '(unversioned)'} from {n_local} documents"
           + (f" ({len(warnings)} warning(s))" if warnings else "")
           + f"\n  source: {ruleset_dir} ({where})")
-    print(f"  {build_dir}/book.html      {book_size:,} bytes, {len(order)} documents in include order")
-    print(f"  {build_dir}/snippets.json  {n_snippets} snippets")
-    print(f"  {build_dir}/mechanics.json {n_mech} documents with mechanics")
+    for meta in corpus.references:
+        print("  against: %s %s (%s)"
+              % (meta["name"], meta["version"] or "unversioned", meta["source"]))
+    width = max((len(str(p)) for p, _ in written), default=0)
+    for out_path, detail in written:
+        print(f"  {str(out_path).ljust(width)}  {detail}")
     return 0
 
 

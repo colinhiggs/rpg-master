@@ -44,6 +44,8 @@
 #                                the rule in a tooltip, not an argument
 #                                about why the rule is that shape.
 
+import functools
+import json
 import re
 import shlex
 from dataclasses import dataclass, field
@@ -52,6 +54,9 @@ from typing import Any
 
 import yaml
 
+from .errors import IncludeCycleError, RuleError
+from .profile import DROP, KEEP, Profile
+
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.S)
 INTERP_RE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
 LINK_RE = re.compile(r"\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]")
@@ -59,30 +64,32 @@ INCLUDE_RE = re.compile(r"\{\%\s*include\s+([A-Za-z0-9_-]+)\s*\%\}")
 # Table directives may span lines, so that a long column list can stay
 # inside the 72-column wrap the prose uses.
 TABLE_RE = re.compile(r"\{\%\s*table\s+(.*?)\s*\%\}", re.S)
-BOOK_ONLY_RE = re.compile(r"\{\%\s*book-only\s*\%\}(.*?)\{\%\s*endbook-only\s*\%\}", re.S)
-BOOK_ONLY_TOKEN_RE = re.compile(r"\{\%\s*(book-only|endbook-only)\s*\%\}")
+# Every {% directive %}, whatever it turns out to be. An audience tag
+# the corpus has not declared used to pass through as literal text,
+# which is the quiet wrong answer this pipeline exists to prevent - so
+# anything this matches and nothing understands is an error.
+DIRECTIVE_RE = re.compile(r"\{\%\s*([A-Za-z][A-Za-z0-9_-]*)")
+BUILTIN_DIRECTIVES = ("include", "table")
 
-KINDS = ("rule", "section", "creature")
 REQUIRED_FIELDS = ("id", "title")
+# Frontmatter keys the toolset owns. Anything else has to be a data
+# block the document's kind declares, so that `mechanic:` for
+# `mechanics:` is an error rather than a key silently ignored.
+DOC_FIELDS = ("id", "title", "kind", "summary", "tags", "based_on")
 
 
-class RuleError(Exception):
-    pass
+@functools.lru_cache(maxsize=None)
+def audience_block_re(tag: str):
+    """{% tag %}...{% endtag %}, content captured."""
+    t = re.escape(tag)
+    return re.compile(r"\{\%\s*" + t + r"\s*\%\}(.*?)\{\%\s*end" + t + r"\s*\%\}", re.S)
 
 
-class IncludeCycleError(RuleError):
-    """Raised when the include graph contains a loop. Carries the full
-    path so the message shows exactly which chain closed on itself,
-    rather than just naming one document."""
-
-    def __init__(self, cycle_path):
-        self.cycle_path = cycle_path
-        chain = " -> ".join(cycle_path)
-        super().__init__(
-            f"include cycle detected: {chain}\n"
-            f"  '{cycle_path[-1]}' is already being included further up this chain, "
-            "so expanding it would never terminate."
-        )
+@functools.lru_cache(maxsize=None)
+def audience_token_re(tag: str):
+    """Either marker of an audience tag, on its own."""
+    t = re.escape(tag)
+    return re.compile(r"\{\%\s*(" + t + r"|end" + t + r")\s*\%\}")
 
 
 @dataclass
@@ -92,16 +99,39 @@ class Doc:
     body: str                       # raw markdown, uncompiled
     kind: str = "rule"
     summary: str = ""
-    mechanics: dict = field(default_factory=dict)
+    data: dict = field(default_factory=dict)   # block name -> block contents
     tags: list = field(default_factory=list)
+    based_on: str = None
     source_path: str = ""
+    # An external document comes from another corpus's build outputs
+    # rather than from a source file here. It can be linked to and read
+    # from; it is never rendered into this corpus's own output.
+    external: bool = False
+    href: str = None
 
     # populated during compile
     links_out: set = field(default_factory=set)
+    # Links that landed in another corpus. Kept apart from links_out so
+    # that "See also" and a snippet's `related` stay within this corpus
+    # and never render an anchor that does not exist in its book.
+    links_external: set = field(default_factory=set)
     includes: list = field(default_factory=list)  # ordered, may repeat
 
+    @property
+    def mechanics(self) -> dict:
+        """The block called `mechanics`.
 
-def parse_doc_file(path: Path) -> Doc:
+        A document used to have exactly one data block and this was it,
+        so a great deal reads `doc.mechanics` - the linter, the data
+        target, the simulator by way of mechanics.json. A corpus whose
+        documents carry differently-named blocks reaches them through
+        `data`; this stays because for a ruleset it is still the whole
+        answer."""
+        return self.data.get("mechanics", {})
+
+
+def parse_doc_file(path: Path, profile: Profile = None) -> Doc:
+    profile = profile or Profile.default()
     text = path.read_text(encoding="utf-8")
     m = FRONTMATTER_RE.match(text)
     if not m:
@@ -115,14 +145,24 @@ def parse_doc_file(path: Path) -> Doc:
         if req not in meta:
             raise RuleError(f"{path.name}: frontmatter missing required field '{req}'")
 
-    kind = meta.get("kind", "rule")
-    if kind not in KINDS:
-        raise RuleError(f"{path.name}: kind '{kind}' must be one of {KINDS}")
+    known = ", ".join(sorted(profile.kinds))
+    kind = meta.get("kind")
+    if kind is None:
+        kind = "rule" if "rule" in profile.kinds else None
+        if kind is None:
+            raise RuleError(
+                f"{path.name}: frontmatter needs a 'kind' - this corpus declares "
+                f"{known} and none of them is the default"
+            )
+    if kind not in profile.kinds:
+        raise RuleError(f"{path.name}: kind '{kind}' is not declared by this corpus "
+                        f"(it declares {known})")
+    spec = profile.kinds[kind]
 
-    # A rule with no summary has no tooltip text, which defeats half the
-    # point of the format. Sections are book scaffolding, so theirs is
-    # optional.
-    if kind != "section" and not str(meta.get("summary", "")).strip():
+    # A document with no summary has no tooltip text, which defeats half
+    # the point of the format. Structural documents are scaffolding, so
+    # their kind can declare the summary optional.
+    if spec.summary == "required" and not str(meta.get("summary", "")).strip():
         raise RuleError(f"{path.name}: frontmatter missing required field 'summary'")
 
     if "spine" in meta:
@@ -138,6 +178,21 @@ def parse_doc_file(path: Path) -> Doc:
             "(so links, includes and file paths can't drift apart)"
         )
 
+    # Anything left over has to be a data block this kind declares. A
+    # key that is neither was silently ignored before, which is how
+    # `mechanic:` for `mechanics:` used to cost an afternoon.
+    data = {}
+    for key, value in meta.items():
+        if key in DOC_FIELDS:
+            continue
+        if key not in spec.data:
+            declared = ", ".join(spec.data) or "no data blocks"
+            raise RuleError(
+                f"{path.name}: frontmatter key '{key}' is not a data block of "
+                f"kind '{kind}', which declares {declared}"
+            )
+        data[key] = value or {}
+
     body = m.group(2)
     return Doc(
         id=meta["id"],
@@ -145,14 +200,15 @@ def parse_doc_file(path: Path) -> Doc:
         kind=kind,
         summary=str(meta.get("summary", "")).strip(),
         body=body,
-        mechanics=meta.get("mechanics", {}) or {},
+        data=data,
         tags=meta.get("tags", []) or [],
+        based_on=meta.get("based_on"),
         source_path=str(path),
         includes=INCLUDE_RE.findall(body),
     )
 
 
-def load_docs(*dirs) -> dict:
+def load_docs(*dirs, profile: Profile = None) -> dict:
     """Load every .md under the given directories into one id namespace.
 
     The search is recursive so that a ruleset with a lot of documents of
@@ -161,13 +217,14 @@ def load_docs(*dirs) -> dict:
     else changes: ids stay a single flat namespace, so where a document
     sits on disk has no bearing on how it is linked or included, and two
     documents with the same id remain an error wherever they are."""
+    profile = profile or Profile.default()
     docs = {}
     for d in dirs:
         d = Path(d)
         if not d.exists():
             continue
         for path in sorted(d.rglob("*.md")):
-            doc = parse_doc_file(path)
+            doc = parse_doc_file(path, profile)
             if doc.id in docs:
                 raise RuleError(
                     f"duplicate document id '{doc.id}' "
@@ -194,47 +251,104 @@ def check_include_targets(docs: dict) -> list:
     return errors
 
 
-def check_book_only_markers(docs: dict) -> list:
-    """{% book-only %} must be closed, and must not nest.
+def audience_token_pattern(profile: Profile):
+    """One regex matching either marker of any declared audience tag.
+
+    Longest tag first, so that a corpus declaring both `only` and
+    `book-only` cannot have the shorter one win a prefix match."""
+    if not profile.audiences:
+        return None
+    tags = sorted(profile.audiences, key=len, reverse=True)
+    alt = "|".join(re.escape(t) for t in tags)
+    return re.compile(r"\{\%\s*(end)?(" + alt + r")\s*\%\}")
+
+
+def check_audience_markers(docs: dict, profile: Profile) -> list:
+    """Audience blocks must be closed, must not nest inside themselves,
+    and must not interleave with each other.
 
     An unclosed marker would silently swallow the rest of a document out
-    of every snippet, which is exactly the kind of quiet wrong answer
-    this pipeline exists to prevent -- so it is an error, not a warning."""
+    of every target that drops the tag, which is exactly the kind of
+    quiet wrong answer this pipeline exists to prevent -- so it is an
+    error, not a warning. Interleaving is checked for the same reason:
+    {% a %}{% b %}{% enda %}{% endb %} leaves each tag individually
+    balanced while making the spans meaningless, and stripping one of
+    them would leave the other's marker behind in the output."""
+    token = audience_token_pattern(profile)
+    if token is None:
+        return []
     errors = []
     for doc in docs.values():
-        depth = 0
-        broken = False
-        for m in BOOK_ONLY_TOKEN_RE.finditer(doc.body):
-            if m.group(1) == "book-only":
-                depth += 1
-                if depth > 1:
-                    errors.append(
-                        f"{doc.id}: {{% book-only %}} blocks cannot nest")
+        if doc.external:
+            continue
+        stack, broken = [], False
+        for m in token.finditer(doc.body):
+            closing, tag = m.group(1), m.group(2)
+            if not closing:
+                if tag in stack:
+                    errors.append(f"{doc.id}: {{% {tag} %}} blocks cannot nest")
                     broken = True
                     break
+                stack.append(tag)
+            elif not stack:
+                errors.append(
+                    f"{doc.id}: {{% end{tag} %}} with no matching "
+                    f"{{% {tag} %}} before it")
+                broken = True
+                break
+            elif stack[-1] != tag:
+                errors.append(
+                    f"{doc.id}: {{% end{tag} %}} closes while {{% {stack[-1]} %}} "
+                    "is still open -- audience blocks may nest, but not overlap")
+                broken = True
+                break
             else:
-                depth -= 1
-                if depth < 0:
-                    errors.append(
-                        f"{doc.id}: {{% endbook-only %}} with no matching "
-                        "{% book-only %} before it")
-                    broken = True
-                    break
-        if not broken and depth != 0:
+                stack.pop()
+        if not broken and stack:
             errors.append(
-                f"{doc.id}: {{% book-only %}} is never closed -- add "
-                "{% endbook-only %}")
+                f"{doc.id}: {{% {stack[-1]} %}} is never closed -- add "
+                f"{{% end{stack[-1]} %}}")
     return errors
 
 
-def strip_book_only(text: str) -> str:
-    """Drop book-only blocks entirely. Used for the snippet form."""
-    return BOOK_ONLY_RE.sub("", text)
+def check_directives(docs: dict, profile: Profile) -> list:
+    """A {% directive %} nothing understands is an error.
+
+    Before this existed, an audience tag the corpus had not declared --
+    {% gm-only %} in a ruleset, say -- passed straight through into the
+    output as literal text. That is worse than a failure: the content it
+    was meant to hide is published, and the only evidence is a stray
+    marker in the middle of a paragraph."""
+    known = set(BUILTIN_DIRECTIVES)
+    for tag in profile.audiences:
+        known.add(tag)
+        known.add("end" + tag)
+    errors = []
+    for doc in docs.values():
+        if doc.external:
+            continue
+        for word in sorted(set(DIRECTIVE_RE.findall(doc.body))):
+            if word not in known:
+                errors.append(
+                    f"{doc.id}: {{% {word} %}} is not a directive this corpus "
+                    f"understands (it has {', '.join(sorted(known))}). If it is "
+                    "an audience tag, declare it in the corpus profile.")
+    return errors
 
 
-def unwrap_book_only(text: str) -> str:
-    """Keep the content, drop the markers. Used for the book form."""
-    return BOOK_ONLY_TOKEN_RE.sub("", text)
+def apply_audiences(text: str, target, profile: Profile) -> str:
+    """Resolve every audience block in `text` for one target.
+
+    Drops run before keeps, so that a kept block sitting inside a
+    dropped one goes with it instead of leaving its markers stranded in
+    the output."""
+    for tag in profile.audiences:
+        if target.action(tag) == DROP:
+            text = audience_block_re(tag).sub("", text)
+    for tag in profile.audiences:
+        if target.action(tag) == KEEP:
+            text = audience_token_re(tag).sub("", text)
+    return text
 
 
 def detect_cycles(docs: dict, root_id: str = None):
@@ -296,12 +410,40 @@ def include_order(docs: dict, root_id: str):
 # ---------------------------------------------------------------------
 # Interpolation and links
 # ---------------------------------------------------------------------
+def _index_sequence(seq, part: str, dotted: str):
+    """Address one element of a list: by its `id` first, by position
+    second."""
+    for item in seq:
+        if isinstance(item, dict) and str(item.get("id", "")) == part:
+            return item
+    if part.lstrip("-").isdigit():
+        try:
+            return seq[int(part)]
+        except IndexError:
+            raise KeyError(dotted)
+    raise KeyError(dotted)
+
+
 def _lookup_path(obj, dotted: str):
+    """Walk a dotted path into a document's frontmatter data.
+
+    A map is addressed by key. A list is addressed by the `id` of one of
+    its entries -- `checks.spot-ambush.dc` -- or, failing that, by
+    position -- `checks.0.dc`. Prefer the id form when writing prose:
+    inserting an entry at the front of a list must not silently repoint
+    every interpolation that follows it. The positional form exists
+    because it costs nothing, and because a list of plain values has no
+    other handle."""
     cur = obj
     for part in dotted.split("."):
-        if not isinstance(cur, dict) or part not in cur:
+        if isinstance(cur, dict):
+            if part not in cur:
+                raise KeyError(dotted)
+            cur = cur[part]
+        elif isinstance(cur, (list, tuple)):
+            cur = _index_sequence(cur, part, dotted)
+        else:
             raise KeyError(dotted)
-        cur = cur[part]
     return cur
 
 
@@ -319,10 +461,10 @@ def resolve_interpolations(doc: Doc, docs: dict, errors: list) -> str:
             if other_id not in docs:
                 errors.append(f"{doc.id}: {{{{ {expr} }}}} references unknown document '{other_id}'")
                 return f"[?{expr}?]"
-            source = {"mechanics": docs[other_id].mechanics}
+            source = docs[other_id].data
         else:
             dotted = expr
-            source = {"mechanics": doc.mechanics}
+            source = doc.data
         try:
             value = _lookup_path(source, dotted)
         except KeyError:
@@ -456,9 +598,9 @@ def expand_tables(doc: Doc, docs: dict, text: str, errors: list) -> str:
                     f"{doc.id}: {{% table {source_expr} %}} references unknown "
                     f"document '{other_id}'")
                 return ""
-            source = {"mechanics": docs[other_id].mechanics}
+            source = docs[other_id].data
         else:
-            dotted, source = source_expr, {"mechanics": doc.mechanics}
+            dotted, source = source_expr, doc.data
         try:
             data = _lookup_path(source, dotted)
         except KeyError:
@@ -549,8 +691,19 @@ def resolve_links(text: str, doc: Doc, docs: dict, errors: list, href_for) -> st
         if target not in docs:
             errors.append(f"{doc.id}: [[{target}]] points at a document that does not exist")
             return '<span class="broken-link">' + (label or target) + "</span>"
+        other = docs[target]
+        text_label = label or other.title
+        if other.external:
+            # Another corpus's document. It has no anchor in this
+            # corpus's book, so it is never given one: either the
+            # reference declared where that corpus is published, or the
+            # id travels on its own for a client to resolve.
+            doc.links_external.add(target)
+            if other.href:
+                return (f'<a href="{other.href}" data-rule-id="{target}" '
+                        f'class="external-ref">{text_label}</a>')
+            return f'<span class="external-ref" data-rule-id="{target}">{text_label}</span>'
         doc.links_out.add(target)
-        text_label = label or docs[target].title
         return f'<a href="{href_for(target)}" data-rule-id="{target}">{text_label}</a>'
 
     return LINK_RE.sub(repl, text)
@@ -698,48 +851,287 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
     return "\n".join(html_parts)
 
 
-def compile_docs(*dirs, root_id: str = "rulebook"):
-    """Load, validate, resolve, and render every document.
+# ---------------------------------------------------------------------
+# Inheritance
+# ---------------------------------------------------------------------
+def merge_block(parent: dict, child: dict) -> dict:
+    """Merge one inherited data block.
 
-    Returns (docs, compiled, errors). Include-target problems land in
-    `errors` so build.py can refuse to write output; a CYCLE raises
-    immediately instead, because unlike the others it makes the graph
-    unwalkable rather than merely wrong."""
-    docs = load_docs(*dirs)
+    Scalars replace wholesale, nested maps merge key by key, lists
+    replace wholesale.
+
+    A list replaces rather than merging because a list is a statement
+    about a whole set: a variant that lists two powers has two powers,
+    not two plus whatever it inherited. Merging them would make it
+    impossible to take anything away, which is most of what a variant is
+    for."""
+    out = dict(parent)
+    for key, value in (child or {}).items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = merge_block(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def resolve_inheritance(docs: dict) -> list:
+    """Fold `based_on` into each document's data blocks.
+
+    This runs before anything reads those blocks -- before lint, before
+    interpolation -- and that ordering is the point. A document whose
+    prose restates a value it INHERITED is exactly the drift this format
+    exists to catch, and it is invisible to a check that only sees the
+    keys the document declared for itself."""
     errors = []
+    done = set()
 
+    def walk(doc_id, stack):
+        if doc_id in done:
+            return
+        doc = docs[doc_id]
+        parent_id = doc.based_on
+        if not parent_id:
+            done.add(doc_id)
+            return
+        if parent_id not in docs:
+            errors.append(
+                f"{doc.id}: based_on names '{parent_id}', which is not a document "
+                "here or in a referenced corpus")
+            done.add(doc_id)
+            return
+        if parent_id in stack:
+            errors.append(
+                f"{doc.id}: based_on is a cycle: "
+                + " -> ".join(stack + [doc_id, parent_id]))
+            done.add(doc_id)
+            return
+        walk(parent_id, stack + [doc_id])
+        parent = docs[parent_id]
+        doc.data = {
+            name: merge_block(parent.data.get(name, {}), doc.data.get(name, {}))
+            for name in set(parent.data) | set(doc.data)
+        }
+        done.add(doc_id)
+
+    for doc_id in sorted(docs):
+        walk(doc_id, [])
+    return errors
+
+
+# ---------------------------------------------------------------------
+# References into another corpus
+# ---------------------------------------------------------------------
+def load_reference(ref, base_dir: Path):
+    """Load another corpus's build outputs as read-only documents.
+
+    Only the outputs are read, never that corpus's sources. What a
+    consumer may depend on is what the producing project publishes, and
+    reading its rules/*.md directly would be depending on how it is
+    written rather than on what it ships.
+
+    Returns (docs, metadata). The metadata travels into every output
+    under the `_`-prefixed convention, so a built adventure says which
+    rules version it was built against."""
+    root = Path(ref.path)
+    if not root.is_absolute():
+        root = Path(base_dir) / root
+    snippets_path = root / "snippets.json"
+    mechanics_path = root / "mechanics.json"
+    missing = [p.name for p in (snippets_path, mechanics_path) if not p.exists()]
+    if missing:
+        raise RuleError(
+            f"reference '{ref.path}' has no {' and no '.join(missing)} in {root}.\n"
+            "  That corpus has not been built, or the path is wrong. Build it with\n"
+            f"  python3 tools/build.py --path {root.parent}")
+    try:
+        snippets = json.loads(snippets_path.read_text(encoding="utf-8"))
+        mechanics = json.loads(mechanics_path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise RuleError(f"reference '{ref.path}': {e}")
+
+    # A single-block producer writes that block's contents straight in,
+    # which is what mechanics.json has always looked like. One that
+    # declares several names them, and says so with `_blocks`.
+    named = mechanics.get("_blocks")
+    blocks = mechanics.get("rules", {})
+
+    docs = {}
+    for doc_id, entry in snippets.items():
+        if doc_id.startswith("_"):
+            continue
+        raw = blocks.get(doc_id)
+        if raw is None:
+            data = {}
+        elif named:
+            data = {name: body for name, body in raw.items()}
+        else:
+            data = {"mechanics": raw}
+        docs[doc_id] = Doc(
+            id=doc_id,
+            title=entry.get("title", doc_id),
+            body="",
+            kind=entry.get("kind", "rule"),
+            summary=entry.get("summary", "") or "",
+            data=data,
+            tags=entry.get("tags", []) or [],
+            source_path=str(snippets_path),
+            external=True,
+            href=ref.href.format(id=doc_id) if ref.href else None,
+        )
+    meta = {
+        "name": ref.name or root.parent.name,
+        "version": snippets.get("_version") or mechanics.get("_version"),
+        "source": ref.path,
+    }
+    return docs, meta
+
+
+def _collect_refs(node, parts):
+    """Every string a declared ref path reaches.
+
+    A path that is not present yields nothing rather than an error: a
+    frontmatter field may legitimately be optional, and `branches` is.
+    A value that IS present and is not a document id is the thing worth
+    failing over."""
+    if not parts:
+        if isinstance(node, str):
+            return [node]
+        if isinstance(node, (list, tuple)):
+            return [v for v in node if isinstance(v, str)]
+        return []
+    head, rest = parts[0], parts[1:]
+    if head == "*":
+        if isinstance(node, dict):
+            children = list(node.values())
+        elif isinstance(node, (list, tuple)):
+            children = list(node)
+        else:
+            return []
+        out = []
+        for child in children:
+            out += _collect_refs(child, rest)
+        return out
+    if isinstance(node, dict):
+        return _collect_refs(node[head], rest) if head in node else []
+    if isinstance(node, (list, tuple)):
+        try:
+            return _collect_refs(_index_sequence(node, head, head), rest)
+        except KeyError:
+            return []
+    return []
+
+
+def check_refs(docs: dict, profile: Profile) -> list:
+    """A frontmatter field declared to hold document ids must hold ids
+    that resolve.
+
+    Prose references are checked already -- a bad [[link]] fails the
+    build. A document id sitting in frontmatter had nothing checking it,
+    which is how a scene comes to point at a scene that was renamed."""
+    errors = []
+    for doc in docs.values():
+        if doc.external:
+            continue
+        spec = profile.kinds.get(doc.kind)
+        if spec is None or not spec.refs:
+            continue
+        for path in spec.refs:
+            for value in _collect_refs(doc.data, path.split(".")):
+                if value not in docs:
+                    errors.append(
+                        f"{doc.id}: {path} names '{value}', which is not a document "
+                        "in this corpus or in one it references")
+    return errors
+
+
+# ---------------------------------------------------------------------
+# Compiling
+# ---------------------------------------------------------------------
+@dataclass
+class Corpus:
+    """Everything a target needs, and nothing about any one target.
+
+    `compiled[id]["marked"]` is the document resolved -- interpolated,
+    tabulated, linked -- with its audience markers still in place.
+    Applying an audience policy is a target's job, because with more
+    than two targets there is no single pair of forms to precompute."""
+
+    docs: dict
+    compiled: dict
+    errors: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    profile: Profile = None
+    references: list = field(default_factory=list)
+    version: str = None
+
+    def local(self):
+        """The documents this corpus owns, in id order. Documents pulled
+        in from a referenced corpus are readable and linkable but are
+        never rendered into this corpus's own output."""
+        return [d for d in self.docs.values() if not d.external]
+
+
+def compile_corpus(*dirs, profile: Profile = None, base_dir=None, version: str = None):
+    """Load, validate, resolve and render a corpus.
+
+    Include-target and reference problems land in `errors` so a caller
+    can refuse to write output; a CYCLE raises immediately instead,
+    because unlike the others it makes the graph unwalkable rather than
+    merely wrong."""
+    profile = profile or Profile.default()
+    if base_dir is None:
+        base_dir = Path(dirs[0]).parent if dirs else Path(".")
+
+    docs = load_docs(*dirs, profile=profile)
+    errors, warnings, references = [], [], []
+
+    for ref in profile.references:
+        external, meta = load_reference(ref, base_dir)
+        for doc_id, doc in external.items():
+            if doc_id in docs:
+                errors.append(
+                    f"duplicate document id '{doc_id}': it is a document here "
+                    f"({docs[doc_id].source_path}) and also one in the referenced "
+                    f"corpus '{meta['name']}'. The two share one flat namespace, "
+                    "so rename this one.")
+                continue
+            docs[doc_id] = doc
+        if meta["version"] is None:
+            warnings.append(
+                f"referenced corpus '{meta['name']}' carries no version, so nothing "
+                "built here can record which of its versions it was built against")
+        references.append(meta)
+
+    errors.extend(resolve_inheritance(docs))
     errors.extend(check_include_targets(docs))
-    errors.extend(check_book_only_markers(docs))
+    errors.extend(check_audience_markers(docs, profile))
+    errors.extend(check_directives(docs, profile))
+    errors.extend(check_refs(docs, profile))
     # Cycles must be caught before anything walks the graph.
     detect_cycles(docs)
 
     compiled = {}
     for doc in docs.values():
+        if doc.external:
+            continue
         interpolated = resolve_interpolations(doc, docs, errors)
         # After interpolation, before links: a generated cell may hold a
         # [[link]], and nothing downstream should have to know whether a
         # table was authored or built.
         tabulated = expand_tables(doc, docs, interpolated, errors)
-        linked = resolve_links(tabulated, doc, docs, errors, href_for=lambda t: f"#rule-{t}")
-        compiled[doc.id] = {
-            "doc": doc,
-            # kept WITH include directives intact - build.py splits on
-            # them so a chapter's prose can sit between its rules.
-            # book-only markers are removed but their CONTENT stays:
-            # the book is the consumer that wants it.
-            "linked": unwrap_book_only(linked),
-            # include-free form, for snippets: an in-game popup wants
-            # this rule, not this rule plus everything it includes
-            # offset 2: a standalone popup renders the title as <h3>,
-            # so the body's `##` should land on <h4>
-            "html": render_markdown(
-                INCLUDE_RE.sub("", strip_book_only(linked)), heading_offset=2),
-        }
+        linked = resolve_links(tabulated, doc, docs, errors,
+                               href_for=lambda t: f"#rule-{t}")
+        # Include directives are kept: a target splits on them so a
+        # chapter's prose can sit between its rules. Audience markers
+        # are kept too, and resolved per target.
+        compiled[doc.id] = {"doc": doc, "marked": linked}
 
     # summaries interpolate too - they show up in tooltips
     for doc in docs.values():
+        if doc.external:
+            continue
         fake = Doc(id=doc.id, title=doc.title, summary="", body=doc.summary,
-                   mechanics=doc.mechanics, source_path=doc.source_path)
+                   data=doc.data, source_path=doc.source_path)
         resolved_summary = resolve_interpolations(fake, docs, errors)
         resolved_summary = LINK_RE.sub(lambda m: (m.group(2) or m.group(1)), resolved_summary)
         flat = " ".join(resolved_summary.split())
@@ -750,10 +1142,18 @@ def compile_docs(*dirs, root_id: str = "rulebook"):
         compiled[doc.id]["summary_resolved"] = re.sub(r"`([^`]+)`", r"\1", flat)
         compiled[doc.id]["summary_html"] = re.sub(r"`([^`]+)`", r"<code>\1</code>", flat)
 
-    return docs, compiled, errors
+    return Corpus(docs=docs, compiled=compiled, errors=errors, warnings=warnings,
+                  profile=profile, references=references, version=version)
 
 
-# Backwards-compatible alias: the old entry point took a single rules
+def compile_docs(*dirs, root_id: str = "rulebook", profile: Profile = None):
+    """The older entry point: same work, returning (docs, compiled,
+    errors) rather than a Corpus. Kept because a good deal calls it."""
+    corpus = compile_corpus(*dirs, profile=profile)
+    return corpus.docs, corpus.compiled, corpus.errors
+
+
+# Backwards-compatible alias: the oldest entry point took a single rules
 # directory and sorted by `spine`. Keeping the name pointed at the new
 # function means callers that only ever passed a directory still work.
 def compile_rules(rules_dir, book_dir=None, root_id: str = "rulebook"):
