@@ -13,12 +13,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import build as build_mod
-import lint
+import rulesc
 from rulesc import (
-    IncludeCycleError, RuleError,
+    IncludeCycleError, RuleError, lint,
     compile_docs, detect_cycles, include_order, render_markdown,
 )
 
@@ -30,8 +29,8 @@ TOOLSET_ROOT = Path(__file__).parent.parent       # .../rpg-master/rules-toolset
 # don't depend on this — this only picks which real content acts as an
 # integration smoke test.
 #
-# The lookup is build.py's, imported rather than repeated, so the two
-# tools can never disagree about where a ruleset lives. A name is found
+# The lookup is the rulesc package's, imported rather than repeated, so
+# no two tools can disagree about where a ruleset lives. A name is found
 # in the installed directory and then in the outer authoring one;
 # --path reaches a ruleset that is in neither, which is the case for a
 # project holding the toolset and a ruleset as sibling submodules.
@@ -42,7 +41,7 @@ _parser = argparse.ArgumentParser(
 _parser.add_argument(
     "ruleset", nargs="?", default="demo",
     help="Ruleset name, looked up in %s then %s (e.g. 'demo', 'ico'). "
-         "Default: demo." % build_mod.RULESET_SEARCH_PATH,
+         "Default: demo." % rulesc.RULESET_SEARCH_PATH,
 )
 _parser.add_argument(
     "--path", default=None,
@@ -50,10 +49,10 @@ _parser.add_argument(
 )
 _args = _parser.parse_args()
 
-RULESET_DIR, RULESET_WHERE = build_mod.resolve_ruleset_dir(_args)
+RULESET_DIR, RULESET_WHERE = rulesc.resolve_ruleset_dir(_args)
 if RULESET_DIR is None:
     sys.exit("no ruleset '%s' in %s\nUse --path to test a ruleset somewhere else entirely."
-             % (_args.ruleset, build_mod.RULESET_SEARCH_PATH))
+             % (_args.ruleset, rulesc.RULESET_SEARCH_PATH))
 if not RULESET_DIR.exists():
     sys.exit("no ruleset directory at %s" % RULESET_DIR)
 # From --path the name is the directory's, the same way build.py reports
@@ -1002,9 +1001,9 @@ check("an unindented line after a list still ends it",
 print("\nRuleset lookup:")
 
 check("a ruleset name is found in the search path",
-      build_mod.find_ruleset("demo")[0] is not None)
+      rulesc.find_ruleset("demo")[0] is not None)
 check("a name that is nowhere is not found",
-      build_mod.find_ruleset("no-such-ruleset") == (None, None))
+      rulesc.find_ruleset("no-such-ruleset") == (None, None))
 
 # The case --path exists for: a project that holds the toolset and a
 # ruleset as sibling submodules, where the ruleset is in neither search
@@ -1021,8 +1020,8 @@ Alpha body.
 """,
 })
 check("a ruleset outside both search directories is unreachable by name",
-      build_mod.find_ruleset(tmp.name) == (None, None))
-resolved, where = build_mod.resolve_ruleset_dir(
+      rulesc.find_ruleset(tmp.name) == (None, None))
+resolved, where = rulesc.resolve_ruleset_dir(
     argparse.Namespace(ruleset="demo", path=str(tmp)))
 check("--path overrides the name", resolved == tmp and where == "path",
       f"{resolved} ({where})")
@@ -1037,12 +1036,12 @@ print("\nVersioning:")
 
 tmpdir = Path(tempfile.mkdtemp())
 check("a ruleset with no VERSION file is unversioned",
-      build_mod.read_version(tmpdir) is None)
+      rulesc.read_version(tmpdir) is None)
 (tmpdir / "VERSION").write_text("1.2.3\n", encoding="utf-8")
-check("VERSION is read and stripped", build_mod.read_version(tmpdir) == "1.2.3")
+check("VERSION is read and stripped", rulesc.read_version(tmpdir) == "1.2.3")
 (tmpdir / "VERSION").write_text("one point two\n", encoding="utf-8")
 try:
-    build_mod.read_version(tmpdir)
+    rulesc.read_version(tmpdir)
     check("a version that is not MAJOR.MINOR.PATCH is fatal", False, "no error raised")
 except RuleError as e:
     check("a version that is not MAJOR.MINOR.PATCH is fatal", "comparable" in str(e), str(e))
@@ -1062,8 +1061,8 @@ Alpha body.
 r, c, e = compile_rules(tmp)
 with tempfile.TemporaryDirectory() as td:
     td = Path(td)
-    build_mod.build_mechanics(r, td / "m.json", version="2.0.1")
-    build_mod.build_snippets(r, c, td / "s.json", version="2.0.1")
+    rulesc.build_mechanics(r, td / "m.json", version="2.0.1")
+    rulesc.build_snippets(r, c, td / "s.json", version="2.0.1")
     m = json.loads((td / "m.json").read_text())
     sn = json.loads((td / "s.json").read_text())
     check("mechanics.json is stamped", m["_version"] == "2.0.1", str(list(m)))
@@ -1072,8 +1071,8 @@ with tempfile.TemporaryDirectory() as td:
     check("a stamp is told from a document by its leading underscore",
           all(k.startswith("_") or "id" in sn[k] for k in sn), str(list(sn)))
 
-    build_mod.build_mechanics(r, td / "m2.json")
-    build_mod.build_snippets(r, c, td / "s2.json")
+    rulesc.build_mechanics(r, td / "m2.json")
+    rulesc.build_snippets(r, c, td / "s2.json")
     check("an unversioned build carries no stamp at all",
           "_version" not in json.loads((td / "m2.json").read_text())
           and "_version" not in json.loads((td / "s2.json").read_text()))
@@ -1087,7 +1086,7 @@ if not rules:
 else:
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        n = build_mod.build_mechanics(rules, td / "m.json")
+        n = rulesc.build_mechanics(rules, td / "m.json")
         payload = json.loads((td / "m.json").read_text())
         check("mechanics.json contains no prose",
               all(not isinstance(v, str) or "<p>" not in v
@@ -1095,7 +1094,7 @@ else:
         check("mechanics.json covers every rule that has mechanics",
               set(payload["rules"]) == {r.id for r in rules.values() if r.mechanics})
 
-        n2 = build_mod.build_snippets(rules, compiled, td / "s.json")
+        n2 = rulesc.build_snippets(rules, compiled, td / "s.json")
         snips = json.loads((td / "s.json").read_text())
         check("snippets.json has one entry per rule",
               len([k for k in snips if not k.startswith("_")]) == len(rules))
@@ -1104,7 +1103,7 @@ else:
         check("every snippet has both plain and html summary",
               all(s.get("summary") and s.get("summary_html") for s in snips.values()))
 
-        size, book_order = build_mod.build_book(rules, compiled, td / "b.html")
+        size, book_order = rulesc.build_book(rules, compiled, td / "b.html")
         book = (td / "b.html").read_text()
         # The root document's title becomes the book's <h1>, so it gets no
         # section anchor of its own — every OTHER document must have one.
@@ -1115,7 +1114,7 @@ else:
         check("book renders documents in include order",
               [d for d, _ in book_order] == [d for d, _ in include_order(rules, "rulebook")])
         check("book has no unresolved templates", "{{" not in book)
-        build_mod.build_book(rules, compiled, td / "bv.html", version="9.9.9")
+        rulesc.build_book(rules, compiled, td / "bv.html", version="9.9.9")
         check("the book shows the version to a reader",
               "Version 9.9.9" in (td / "bv.html").read_text(encoding="utf-8"))
         # mechanics: is a machine concern -- the server reads it and the
