@@ -22,7 +22,11 @@ with it: it is that it holds no opinions about any one game, and that
 its output shape stays put.
 
 Its companion is `SHARING.md` in the Ico rules repository, which says
-the same kind of thing about a ruleset.
+the same kind of thing about a ruleset. `WORKING.md`, beside this file,
+is the other half of the pair: this document says who may write to
+what, and that one says how and from where — which working copy to
+open, which session to do it in, and the steps for the jobs that come
+up often.
 
 ## The write surface
 

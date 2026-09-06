@@ -9,7 +9,9 @@ This repository is also a dependency of other projects, which hold it
 as a git submodule and extend `rules-toolset/` for their own document
 kinds. `SHARING.md` says who may change what here, and what an addition
 to the toolset has to satisfy to stay usable by every game that
-compiles through it.
+compiles through it. `WORKING.md` says how to work across the three
+projects — which working copy to open, when to keep the sessions
+separate and when not, and step-by-step procedures for the common jobs.
 
 ## Stack
 
