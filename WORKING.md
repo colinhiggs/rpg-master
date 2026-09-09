@@ -338,6 +338,15 @@ past it. `vendor_rules.py --check` is the automated form of the same
 question, and it also warns when the commit it is about to record has
 not been pushed.
 
+**The toolset reads that stamp too**, so the two sides have to agree
+about it. `commit` and `describe` travel into `_references` in every
+built adventure, which is what lets a compiled module say which revision
+of 2.5.0 it holds rather than only which version; `version` is checked
+against the outputs beside it and a disagreement warns, naming both.
+Those three field names are the whole contract, anything else in the
+file is ignored, and a stamp carrying none of them warns rather than
+recording nothing in silence. `rules-toolset/CORPUS.md` has the detail.
+
 Read `CHANGELOG.md` for the versions you crossed. That is still the most
 important line in this procedure. MAJOR is the only tier that obliges
 anything, and every MAJOR entry names its renames and removals
