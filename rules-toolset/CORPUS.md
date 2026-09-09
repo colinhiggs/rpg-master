@@ -333,6 +333,65 @@ having been built against. A corpus that declares no references emits no
 `_references` at all, which is part of what keeps existing outputs
 byte-identical.
 
+### A vendored reference, and its stamp
+
+A reference usually points at a checkout: `path` reaches a sibling
+directory that some other repository is responsible for. A consumer can
+instead **vendor** it — commit its own copy of the two files a reference
+reads, so the dependency travels with the repository rather than beside
+it. Nothing about the reference changes; `path` reaches a directory in
+this repository instead of one outside it.
+
+What a vendoring consumer knows and the outputs do not is *which*
+revision they were taken from. `_version` says 1.0.4, which is enough at
+a released tag and not enough two commits past one. So a reference
+directory may carry a stamp beside the outputs:
+
+```
+refs/rules-ico/
+  snippets.json
+  mechanics.json
+  VENDORED.json
+```
+
+```json
+{ "version": "1.0.4", "commit": "4b8e1f0…", "describe": "v1.0.4" }
+```
+
+Three fields are read and everything else in the file is ignored, since
+whatever wrote it may record more for its own purposes:
+
+- **`commit`** and **`describe`** travel into that corpus's
+  `_references` entry alongside `name`, `version` and `source`.
+- **`version`** is not recorded — the outputs already carry that — but
+  it is **checked against them**. A disagreement is a warning naming
+  both, and the outputs win: they are what was actually built against,
+  so a stamp that differs is the half of the pair that lies, and the
+  fix is to vendor again rather than to edit either.
+
+A stamp file that exists but carries none of the three is also a
+warning, naming the three, because the likely cause is a vendoring tool
+whose field names do not match and the alternative is recording nothing
+in silence.
+
+Writing the stamp is not this toolset's job. Vendoring is a consumer's
+policy — which producer, how often, checked by what — and the tool that
+implements it lives with the consumer. Reading the stamp is this
+toolset's job, because the thing that consumes the record is the built
+output.
+
+The whole mechanism is inert until used: a reference with no
+`VENDORED.json` beside it records exactly what it always did and adds no
+key to any output.
+
+`rules/demo-supplement/` has one of each — a reference to a sibling
+checkout, and a vendored one under `refs/almanac/`. The vendored one
+declares no `href`, because only the data was copied and not the book,
+so a link out to it renders as a `data-rule-id` span rather than an
+anchor into a book the reader does not have. Whether to vendor
+`book.html` as well is a consumer's decision and needs nothing from the
+toolset: vendor it, and point `href` at the copy.
+
 ---
 
 ## The output shapes

@@ -958,7 +958,61 @@ def resolve_inheritance(docs: dict) -> list:
 # ---------------------------------------------------------------------
 # References into another corpus
 # ---------------------------------------------------------------------
-def load_reference(ref, base_dir: Path):
+STAMP_FILE = "VENDORED.json"
+STAMP_KEYS = ("commit", "describe")
+
+
+def _read_stamp(root: Path, ref, meta: dict, warnings: list):
+    """Provenance for a reference whose outputs were copied into place.
+
+    A consumer that *vendors* a producer — commits a copy of its build
+    outputs rather than pointing at a checkout of it — knows one thing
+    the outputs themselves do not carry: which revision they were taken
+    from. `_version` says 2.5.0 and not *which* 2.5.0, which is enough
+    at a released tag and not enough anywhere past one.
+
+    So a reference directory may hold a stamp beside the outputs, and
+    whatever of it this toolset understands travels into `_references`
+    with the rest. Writing it belongs to whatever does the vendoring and
+    is not this toolset's business; reading it is, because the consumer
+    of the record is the built output rather than the vendoring tool.
+
+    Inert until used: a reference with no stamp records exactly what it
+    always did, and adds no key to any output."""
+    path = root / STAMP_FILE
+    if not path.exists():
+        return
+    try:
+        stamp = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise RuleError(f"reference '{ref.path}': {STAMP_FILE}: {e}")
+    if not isinstance(stamp, dict):
+        raise RuleError(
+            f"reference '{ref.path}': {STAMP_FILE} holds "
+            f"{type(stamp).__name__}, not an object of provenance fields")
+
+    found = {key: stamp[key] for key in STAMP_KEYS
+             if stamp.get(key) not in (None, "")}
+    meta.update(found)
+
+    # The stamp and the outputs are two copies of one fact, and a
+    # vendoring that copied one without the other is the failure worth
+    # catching: the outputs govern, so the stamp is the one that lies.
+    stamped = stamp.get("version")
+    if stamped and meta["version"] and stamped != meta["version"]:
+        warnings.append(
+            f"referenced corpus '{meta['name']}': {STAMP_FILE} says version "
+            f"{stamped}, the outputs beside it say {meta['version']}. The "
+            "outputs are what was built against; re-vendor rather than "
+            "trust the stamp.")
+    elif not found and not stamped:
+        warnings.append(
+            f"referenced corpus '{meta['name']}' has a {STAMP_FILE} carrying "
+            f"none of version, {', '.join(STAMP_KEYS)}, so nothing was "
+            "recorded from it. Those are the field names this toolset reads.")
+
+
+def load_reference(ref, base_dir: Path, warnings=None):
     """Load another corpus's build outputs as read-only documents.
 
     Only the outputs are read, never that corpus's sources. What a
@@ -968,7 +1022,11 @@ def load_reference(ref, base_dir: Path):
 
     Returns (docs, metadata). The metadata travels into every output
     under the `_`-prefixed convention, so a built adventure says which
-    rules version it was built against."""
+    rules version it was built against — and, where the reference is
+    vendored and stamped, which revision of that version.
+
+    `warnings` collects the soft problems; a caller that passes none is
+    saying it does not want to hear them."""
     root = Path(ref.path)
     if not root.is_absolute():
         root = Path(base_dir) / root
@@ -1020,6 +1078,7 @@ def load_reference(ref, base_dir: Path):
         "version": snippets.get("_version") or mechanics.get("_version"),
         "source": ref.path,
     }
+    _read_stamp(root, ref, meta, warnings if warnings is not None else [])
     return docs, meta
 
 
@@ -1123,7 +1182,7 @@ def compile_corpus(*dirs, profile: Profile = None, base_dir=None, version: str =
     errors, warnings, references = [], [], []
 
     for ref in profile.references:
-        external, meta = load_reference(ref, base_dir)
+        external, meta = load_reference(ref, base_dir, warnings)
         for doc_id, doc in external.items():
             if doc_id in docs:
                 errors.append(

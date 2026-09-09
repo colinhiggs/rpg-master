@@ -64,6 +64,25 @@ references:
   - path: ../demo/build
     href: "../../demo/build/book.html#rule-{id}"
 
+# The second reference is the other way a corpus can hold a dependency:
+# `refs/almanac/` is not a checkout of anything, it is a committed copy
+# of what that corpus published — the two files a reference actually
+# reads, and a `VENDORED.json` stamp beside them saying which revision
+# they were taken from. A consumer that vendors knows something the
+# outputs do not carry: `_version` says 3.1.0 and not *which* 3.1.0.
+# Whatever of that stamp this toolset understands travels into
+# `_references` with the version.
+#
+# It declares no `href` on purpose, because only the data was vendored
+# and not the book. A link out of here to `river-tarn` therefore renders
+# as a span carrying `data-rule-id` rather than as an anchor into a book
+# that is not there — which is the honest answer, and the reason
+# vendoring the book is a consumer's decision rather than a toolset
+# feature. A consumer that wanted self-contained output would vendor
+# `book.html` too and point `href` at its own copy.
+  - path: refs/almanac
+    name: almanac
+
 # --- Outputs --------------------------------------------------------
 # Four targets over three shapes. `handout` and `book` are the same
 # shape with different answers about who is reading.

@@ -4,6 +4,13 @@
       "name": "demo",
       "version": null,
       "source": "../demo/build"
+    },
+    {
+      "name": "almanac",
+      "version": "3.1.0",
+      "source": "refs/almanac",
+      "commit": "4b8e1f0c7a91d6e2b35f0c8d4a7e2915b6c0d3f8",
+      "describe": "v3.1.0"
     }
   ],
   "the-crossing": {
@@ -31,13 +38,16 @@
     "title": "The Far Bank",
     "summary": "Wet, short of arrows, and a long way from anywhere to dry out.",
     "summary_html": "Wet, short of arrows, and a long way from anywhere to dry out.",
-    "html": "<p>Whoever is still standing is on the far bank, and whatever they were carrying has been in the river.</p>",
+    "html": "<p>Whoever is still standing is on the far bank, and whatever they were carrying has been in the river.</p>\n<p>Going back across is a question about the weather rather than about the <span class=\"external-ref\" data-rule-id=\"river-tarn\">Tarn</span>, which is passable at the ford below 30 inches and rises within 6 hours of rain on the moor.</p>",
     "tags": [
       "encounter"
     ],
     "related": [],
     "includes": [],
-    "book_anchor": "#rule-the-far-bank"
+    "book_anchor": "#rule-the-far-bank",
+    "external": [
+      "river-tarn"
+    ]
   },
   "goblin-captain": {
     "id": "goblin-captain",

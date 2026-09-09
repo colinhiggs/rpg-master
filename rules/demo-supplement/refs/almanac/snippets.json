@@ -1,0 +1,13 @@
+{
+  "_generated": "2026-08-14T09:20:11Z",
+  "_version": "3.1.0",
+  "river-tarn": {
+    "id": "river-tarn",
+    "kind": "place",
+    "title": "The River Tarn",
+    "summary": "Slow and wide, fed by a moor that does not hold water.",
+    "summary_html": "Slow and wide, fed by a moor that does not hold water.",
+    "html": "<p>The Tarn is a lowland river with an upland temper. It drains a moor of thin peat over rock, so rain that falls on the watershed is in the channel the same day rather than a week later.</p>\n<p>Fords are therefore a question about the last two days of weather rather than about the river.</p>",
+    "tags": ["river", "water"]
+  }
+}

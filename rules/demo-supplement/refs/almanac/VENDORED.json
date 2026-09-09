@@ -1,0 +1,8 @@
+{
+  "version": "3.1.0",
+  "commit": "4b8e1f0c7a91d6e2b35f0c8d4a7e2915b6c0d3f8",
+  "describe": "v3.1.0",
+  "vendored_at": "2026-08-14T09:31:02Z",
+  "source": "https://example.invalid/almanac-of-waters.git",
+  "vendored_by": "some consumer's own vendoring script"
+}

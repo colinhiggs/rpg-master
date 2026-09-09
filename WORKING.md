@@ -205,7 +205,7 @@ python3 tools/test_rules.py --path ../../rules-ico
 python3 sim/balance.py --check
 ```
 
-So the adventures project can build the ruleset, run all 199 pipeline
+So the adventures project can build the ruleset, run all 209 pipeline
 tests against it, and measure it, in place. The split costs nothing in
 capability, which is what makes it reasonable to insist on.
 

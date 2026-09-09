@@ -9,6 +9,13 @@
       "name": "demo",
       "version": null,
       "source": "../demo/build"
+    },
+    {
+      "name": "almanac",
+      "version": "3.1.0",
+      "source": "refs/almanac",
+      "commit": "4b8e1f0c7a91d6e2b35f0c8d4a7e2915b6c0d3f8",
+      "describe": "v3.1.0"
     }
   ],
   "rules": {

@@ -179,7 +179,7 @@ silence is honest and a version number would be theatre.
 
 ## Extensions that were wanted, and landed
 
-All four are built. They are named here because the reasoning still
+All five are built. They are named here because the reasoning still
 applies to the next extension: two projects should not quietly invent
 two different answers to one question.
 
@@ -196,6 +196,18 @@ two different answers to one question.
 - **Ruleset lookup takes `$RULESET_PATH`**, appended to the two-place
   search, so a project that builds the same corpus every day need not
   spell out where it is every day.
+- **A vendored reference had no provenance.** A consumer that commits
+  its own copy of a producer's build outputs, rather than pointing at a
+  checkout, knows which revision it took them from; `_references`
+  recorded only the version, so a built module could say 1.0.4 and not
+  *which* 1.0.4. A reference directory may now carry a `VENDORED.json`
+  beside the outputs. `commit` and `describe` travel into the record,
+  `version` is checked against the outputs and a disagreement warns, and
+  a reference without a stamp records exactly what it always did.
+  Writing the stamp stays with the consumer, because vendoring is a
+  policy — which producer, how often, checked by what. Reading it is the
+  toolset's job, because the thing that consumes the record is the built
+  output.
 
 `rules-toolset/CORPUS.md` is the reference for all of it, and the API a
 second compiler calls.
@@ -209,8 +221,32 @@ second compiler calls.
   written.
 - **A resolved-Markdown output**, so a consumer can run the compiled
   text through a real typesetter rather than through `book.html`.
-- **Version the toolset**, if it ever gains a consumer that cannot pin
-  it. See below.
+- **Version the toolset**, if it ever gains a consumer that cannot
+  rebuild from source. See below.
+
+## Extensions that were asked for and declined
+
+Both were raised by the adventures project when it dropped its
+submodules, alongside the stamp above, which was taken. They are written
+down with their reasons so that declining them once is not the same as
+forgetting them.
+
+- **A staleness gate for a vendored reference.** The adventures project
+  has `vendor_rules.py --check`, which asks whether its committed copy
+  is behind the clone it came from. It stays there. Answering that needs
+  a live checkout of the producer, which a build cannot assume exists —
+  a vendored dependency's whole point is that the checkout is optional —
+  so the toolset would have to be told where to look, and being told
+  where to look is the consumer's policy again. It moves here when there
+  is a second consumer vendoring a producer, and not before.
+- **Vendoring `book.html` too.** Nothing to do: `href` is already the
+  knob and it is per reference. A consumer that wants self-contained
+  output vendors the book and points `href` at its own copy. One that
+  does not gets a `data-rule-id` span instead of an anchor into a book
+  the reader has not got, which is the existing answer for a reference
+  with no `href` and the right one. A flag that rewrote `href` to a
+  vendored copy would be a third way of saying what two mechanisms
+  already say.
 
 ## Working in a consumer's clone
 

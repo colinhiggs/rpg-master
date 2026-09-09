@@ -1931,6 +1931,124 @@ Body.
 
 
 # ---------------------------------------------------------------------
+print("\nA vendored reference, and its provenance stamp:")
+
+
+def with_stamp(where: Path, stamp):
+    (where / "VENDORED.json").write_text(
+        json.dumps(stamp) if isinstance(stamp, (dict, list)) else stamp,
+        encoding="utf-8")
+
+
+with tempfile.TemporaryDirectory() as td:
+    td = Path(td)
+    outputs = td / "other" / "build"
+    built_corpus({
+        "goblin.md": """---
+id: goblin
+title: Goblin
+kind: creature
+summary: A goblin.
+mechanics:
+  typical_number: 6
+---
+A goblin.
+""",
+    }, outputs, version="1.2.3")
+
+    vendored = rulesc.Profile.from_mapping({
+        "kinds": {"npc": {"data": ["mechanics"], "discovery": "lookup"}},
+        "audiences": [],
+        "roots": [],
+        "lint": {"unincluded": False, "orphans": False},
+        "references": [{"path": "other/build", "name": "other"}],
+        "targets": {"snippets": {"shape": "snippets",
+                                 "audiences": {"default": "drop"}}},
+    })
+    files = {
+        "boss.md": """---
+id: boss
+title: Boss
+kind: npc
+summary: A boss.
+---
+It leads {{ goblin:mechanics.typical_number }} of them.
+""",
+    }
+
+    src = with_temp_rules(files)
+    corpus = rulesc.compile_corpus(src, profile=vendored, base_dir=td)
+    check("an unstamped reference records exactly what it always did",
+          corpus.references[0] == {"name": "other", "version": "1.2.3",
+                                   "source": "other/build"},
+          str(corpus.references))
+    shutil.rmtree(src)
+
+    with_stamp(outputs, {"version": "1.2.3", "commit": "abc123",
+                         "describe": "v1.2.3-2-gabc123",
+                         "vendored_by": "somebody else's script"})
+    src = with_temp_rules(files)
+    corpus = rulesc.compile_corpus(src, profile=vendored, base_dir=td)
+    check("a stamp carries the revision through to the reference record",
+          corpus.references[0].get("commit") == "abc123"
+          and corpus.references[0].get("describe") == "v1.2.3-2-gabc123",
+          str(corpus.references))
+    check("a stamp agreeing with the outputs is silent",
+          not corpus.warnings, str(corpus.warnings))
+    check("a field the toolset does not read is left alone, not copied",
+          "vendored_by" not in corpus.references[0],
+          str(corpus.references))
+    with tempfile.TemporaryDirectory() as out:
+        rulesc.build_target(corpus, "snippets", Path(out) / "s.json")
+        s = json.loads((Path(out) / "s.json").read_text(encoding="utf-8"))
+        check("the built output says which revision, not just which version",
+              s["_references"][0]["commit"] == "abc123", str(s["_references"]))
+    shutil.rmtree(src)
+
+    # The outputs govern: they are what was actually built against, so a
+    # stamp disagreeing with them is the half of the pair that lies.
+    with_stamp(outputs, {"version": "9.9.9", "commit": "abc123"})
+    src = with_temp_rules(files)
+    corpus = rulesc.compile_corpus(src, profile=vendored, base_dir=td)
+    check("a stamp disagreeing with the outputs warns and names both",
+          any("9.9.9" in w and "1.2.3" in w for w in corpus.warnings),
+          str(corpus.warnings))
+    check("the version recorded is still the outputs', not the stamp's",
+          corpus.references[0]["version"] == "1.2.3", str(corpus.references))
+    shutil.rmtree(src)
+
+    # A consumer whose vendoring tool names its fields something else
+    # gets told, rather than silently recording nothing.
+    with_stamp(outputs, {"sha": "abc123", "tag": "v1.2.3"})
+    src = with_temp_rules(files)
+    corpus = rulesc.compile_corpus(src, profile=vendored, base_dir=td)
+    check("a stamp carrying none of the fields read says which fields those are",
+          any("commit, describe" in w for w in corpus.warnings),
+          str(corpus.warnings))
+    shutil.rmtree(src)
+
+    with_stamp(outputs, "{not json at all")
+    src = with_temp_rules(files)
+    try:
+        rulesc.compile_corpus(src, profile=vendored, base_dir=td)
+        check("an unreadable stamp is an error rather than a shrug", False)
+    except RuleError as ex:
+        check("an unreadable stamp is an error rather than a shrug",
+              "VENDORED.json" in str(ex), str(ex))
+    shutil.rmtree(src)
+
+    with_stamp(outputs, ["a", "list"])
+    src = with_temp_rules(files)
+    try:
+        rulesc.compile_corpus(src, profile=vendored, base_dir=td)
+        check("a stamp that is not an object is an error", False)
+    except RuleError as ex:
+        check("a stamp that is not an object is an error",
+              "not an object" in str(ex), str(ex))
+    shutil.rmtree(src)
+
+
+# ---------------------------------------------------------------------
 print("\nLint against many roots, or none:")
 
 tmp = with_temp_rules({

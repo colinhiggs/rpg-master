@@ -1,0 +1,10 @@
+{
+  "_generated": "2026-08-14T09:20:11Z",
+  "_version": "3.1.0",
+  "rules": {
+    "river-tarn": {
+      "ford_passable_below_inches": 30,
+      "rises_after_rain_in_hours": 6
+    }
+  }
+}
