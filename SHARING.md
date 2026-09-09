@@ -6,9 +6,8 @@ of it extends the toolset without breaking anybody else's build.
 This repository holds two things that other projects depend on: the
 game engine, and `rules-toolset/`, the generic compiler that turns any
 ruleset's `rules/` and `book/` into `book.html`, `snippets.json` and
-`mechanics.json`. It is developed here, and it is also checked out as a
-git submodule by the projects built on it — the adventures project
-first, others later.
+`mechanics.json`. It is developed here, and it is also cloned by the
+projects built on it — the adventures project first, others later.
 
 Those projects are not read-only consumers. An adventure is a document
 with frontmatter, prose, interpolation and audience-dependent sections,
@@ -133,7 +132,7 @@ demonstrates something about the toolset which the existing two cannot.
 ## Building a ruleset that lives outside this repository
 
 The two search directories are relative to the toolset, so a project
-that holds this repository and a ruleset as sibling submodules finds
+that holds this repository and a ruleset as sibling clones finds
 neither. Both tools take `--path` for exactly that case:
 
 ```bash
@@ -157,15 +156,26 @@ it.
 
 ## What is not versioned here
 
-This repository has no `VERSION` file and no tags. A consumer's
-submodule pin — a commit hash — is its version, and that is adequate
-while the output shape holds, because the shape is the only thing a
-consumer can depend on that it cannot see for itself.
+This repository has no `VERSION` file and no tags, and its one consumer
+records nothing at all about which revision of it built anything.
 
-If the toolset ever gains consumers that cannot pin it, it should adopt
-the same convention the Ico rules use (`VERSION`, an annotated tag, and
-tiers defined by what the consumer has to *do*). Until then, a hash is
-honest and a version number would be theatre.
+That used to be justified by the pin — a submodule pin is a commit hash,
+and a hash is honest. The adventures project dropped its pin in
+September 2026, and the better argument turned out to be underneath it
+all along. **This is a tool dependency.** Nothing in a consumer's
+content depends on which revision compiled it, and a mismatch — a corpus
+using a directive this revision does not have, an output shape that
+moved — fails loudly at build time rather than producing quietly wrong
+output. A data dependency needs a version because you cannot see the
+difference from the outside. A tool dependency announces it.
+
+What that rests on is the output shape holding, which is the section
+above, and on a consumer being able to rebuild from source whenever it
+likes. If either stops being true — the shape moves, or the toolset
+gains a consumer shipping compiled output it cannot reproduce — it
+should adopt the convention the Ico rules use: `VERSION`, an annotated
+tag, and tiers defined by what the consumer has to *do*. Until then,
+silence is honest and a version number would be theatre.
 
 ## Extensions that were wanted, and landed
 
@@ -202,30 +212,30 @@ second compiler calls.
 - **Version the toolset**, if it ever gains a consumer that cannot pin
   it. See below.
 
-## Working in a submodule checkout
+## Working in a consumer's clone
 
-A consuming project holds this repository as a submodule, which makes
-three ordinary mistakes easy.
+A consuming project keeps its own clone of this repository — the
+adventures project has one at `ico-adventures/rpg-master`, gitignored
+there, imported for `rulesc`. Until September 2026 that clone was a git
+submodule, and what changed is worth stating rather than leaving as a
+gap.
 
-**Know which repository you are in.** A commit made inside the
-submodule does not appear in the outer project's history. The outer
-project records only which commit this one is pinned to.
+**Know which repository you are in.** A commit made inside that clone is
+a commit to *this* repository, on a branch of this repository's remote.
+It does not appear in the outer project's history — and now that the
+gitlink is gone, the outer project does not record it in any form.
+Nothing over there will tell you the clone has moved, or is dirty, or
+is on somebody's half-finished branch.
 
-**Never commit on a detached HEAD.** `git submodule update` leaves the
-checkout detached, and a commit made there belongs to no branch and is
-lost by the next update. Check out a branch first:
+**Two rules are retired.** "Never commit on a detached HEAD" existed
+because `git submodule update` left the checkout detached; that command
+is not run any more and a plain clone is on a branch. "Push before the
+pin" existed because a gitlink could name a commit the remote did not
+have; there is no gitlink. Both are named here rather than deleted, so
+that a reader who remembers them knows they went with the submodules
+and does not wonder whether the omission is an oversight.
 
-```bash
-git -C rpg-master checkout main && git -C rpg-master pull
-```
-
-**Push this repository before pushing the pin.** If the outer project
-pushes a pin to a commit that has not been pushed here, every other
-checkout breaks: it is told to fetch a commit the remote does not have.
-Push here first, or let git do both in the right order with
-`git push --recurse-submodules=on-demand`.
-
-Branch from an up-to-date `main`, and from a consumer project's
-submodule name the branch for that project — `adv/toolset-gm-only`
-rather than `gm-only` — so that two projects pushing to this one remote
-can always tell whose branch is whose.
+Branch from an up-to-date `main`, and from a consumer project's clone
+name the branch for that project — `adv/toolset-gm-only` rather than
+`gm-only` — so that two projects pushing to this one remote can always
+tell whose branch is whose.
