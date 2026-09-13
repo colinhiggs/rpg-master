@@ -42,6 +42,18 @@ nav ol ol { padding-left: 18px; margin: 4px 0; }
 nav li { margin: 5px 0; }
 nav ol ol li { margin: 2px 0; font-size: 13px; }
 .related { font-family: system-ui, sans-serif; font-size: 13px; color: #6e7280; margin-top: 18px; }
+details.aside { margin: 26px 0; border-top: 1px solid #2a2c36; padding-top: 8px; }
+details.aside > summary { cursor: pointer; list-style: none; color: #6e7280;
+        font-family: system-ui, sans-serif; font-size: 12px; text-transform: uppercase;
+        letter-spacing: .06em; padding: 4px 0; }
+details.aside > summary::-webkit-details-marker { display: none; }
+details.aside > summary::before { content: "\25B8"; display: inline-block;
+        width: 1.1em; transition: transform .12s ease; }
+details.aside[open] > summary::before { transform: rotate(90deg); }
+details.aside > summary:hover { color: #a8acb8; }
+details.aside > summary > * { display: inline; font: inherit; color: inherit;
+        margin: 0; border: none; padding: 0; letter-spacing: inherit; }
+details.aside[open] > summary { color: #a8acb8; margin-bottom: 6px; }
 footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
          font-family: system-ui, sans-serif; font-size: 12px; color: #5d616e; }
 </style>
@@ -61,15 +73,17 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p class="summary">A wide ford, watched from the reeds by people who chose it first.</p>
 <p>The water is slow and shallow enough to wade and the far bank is a long way off. Both of those are why the reeds are worth watching.</p>
 <p>Anyone crossing may look at the banks first, against a difficulty of 14. Anyone hurrying across instead is keeping their footing against 9, and the streambed counts as difficult ground under <a href="../../demo/build/book.html#rule-movement" data-rule-id="movement" class="external-ref">Movement</a> — each tile entered costs 2.</p>
-<h4>Running it</h4>
+<details class="aside"><summary><h4>Running it</h4></summary>
 <p>The scouts open and the <a href="#rule-goblin-captain" data-rule-id="goblin-captain">captain</a> does not, until somebody is in the water. If the party spotted the reeds, reverse that: the captain has nothing to gain by waiting for an ambush that is not going to happen.</p>
 <p>Whichever way it ends, it ends at <a href="#rule-the-far-bank" data-rule-id="the-far-bank">The Far Bank</a>.</p>
-<h4>Design note</h4>
+</details>
+<details class="aside"><summary><h4>Design note</h4></summary>
 <p>Three things here have no equivalent in a ruleset. This document is called <code>encounter.md</code> and sits in a directory called <code>the-crossing</code>, which is where its id comes from: the <code>encounter</code> kind declares <code>id_from: directory</code>, for a corpus that files one document per directory alongside that document's own maps and handouts. The guarantee is the one the filename rule gives everywhere else -- an id is derivable from where the document sits, so a document cannot be moved without its links noticing.</p>
 <p>The block is called <code>setup</code> rather than <code>mechanics</code>, and the prose interpolates out of it by name; a block is addressed by the name its kind declares, so the toolset never has to be told what an encounter is.</p>
 <p>And the checks are a list, addressed by each entry's own <code>id</code> rather than by position — write <code>setup.checks.spot-the-ford.difficulty</code>, not <code>setup.checks.0.difficulty</code>, so that adding a check at the top of the list does not silently repoint every number in the paragraph below it.</p>
 <p>Both difficulties are covered by the drift check exactly as a rule's values are: write one of them out as a digit and the build fails.</p>
 <p>The captain is linked from inside the <code>gm-only</code> span above and nowhere else, which is why <code>build/book.html</code> lists it under "See also" here and <code>build/handout.html</code> lists nothing but the far bank. A related-links line is built per target, from the links still standing after that target's audience policy — otherwise the handout would name the one document the target exists to withhold, and hang a dead anchor off it.</p>
+</details>
 <p class="related">See also: <a href="#rule-goblin-captain">Captain</a>, <a href="#rule-the-far-bank">The Far Bank</a></p>
 </section>
 <section class="doc" id="rule-the-far-bank">
@@ -78,12 +92,14 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p class="summary">Wet, short of arrows, and a long way from anywhere to dry out.</p>
 <p>Whoever is still standing is on the far bank, and whatever they were carrying has been in the river.</p>
 <p>Going back across is a question about the weather rather than about the <span class="external-ref" data-rule-id="river-tarn">Tarn</span>, which is passable at the ford below 30 inches and rises within 6 hours of rain on the moor.</p>
-<h4>Running it</h4>
+<details class="aside"><summary><h4>Running it</h4></summary>
 <p>There is nothing left to fight here. What there is instead is a decision about whether to go back for anything, and it should cost something either way.</p>
-<h4>Design note</h4>
+</details>
+<details class="aside"><summary><h4>Design note</h4></summary>
 <p>This document carries no data block at all, which is allowed: a kind says which blocks its documents <em>may</em> carry, not which they must. It is here because <a href="#rule-the-crossing" data-rule-id="the-crossing">The Crossing</a> names it in frontmatter — <code>setup.leads_to</code> is declared as holding a document id, so an encounter pointing at an encounter that does not exist is a build error rather than something discovered at the table.</p>
 <p>It is also where the second kind of reference is used. <code>river-tarn</code> is not a document in this corpus and is not in <code>demo</code> either: it comes from <code>refs/almanac/</code>, a <em>vendored</em> corpus — a committed copy of what that corpus published, rather than a path to a checkout of it. Nothing in the paragraph above says so, which is the point. A reference is a reference, and where the outputs came from is a question about this repository rather than about the prose.</p>
 <p>What differs is what gets recorded and what a link can do. Because the copy carries a <code>VENDORED.json</code> stamp, <code>_references</code> in the built outputs says which <em>revision</em> of 3.1.0 this was built against and not merely the version. And because only the data was vendored and not the book, the reference declares no <code>href</code>, so the link renders as a span carrying <code>data-rule-id</code> rather than as an anchor into a book nobody has. A dead anchor would be worse than no anchor.</p>
+</details>
 <p class="related">See also: <a href="#rule-the-crossing">The Crossing</a></p>
 </section>
 </section>
@@ -95,8 +111,9 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p>A scout is the cheapest thing that can still make a crossing expensive. It carries sling, knife and no armour worth the name.</p>
 <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Threat</td><td>2</td></tr><tr><td>Attack</td><td>5</td></tr><tr><td>Hit points</td><td>6</td></tr><tr><td>Speed tiles</td><td>7</td></tr></tbody></table>
 <p>It moves 7 tiles, which is further than the 4 tiles a character gets under <a href="../../demo/build/book.html#rule-movement" data-rule-id="movement" class="external-ref">Movement</a> — so a scout that decides to leave has left.</p>
-<h3>Design note</h3>
+<details class="aside"><summary><h3>Design note</h3></summary>
 <p>This document is the base of an inheritance chain: the captain below declares only what differs. Note also the two references reaching into the <code>demo</code> corpus — a link and an interpolation — neither of which needs any syntax of its own. A document is addressed the same way whether it is in this corpus or in one this corpus references.</p>
+</details>
 </section>
 <section class="doc" id="rule-goblin-captain">
 <h2>Captain</h2>
@@ -105,8 +122,9 @@ footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
 <p>A captain is a scout that has survived long enough to take something better off somebody. It keeps the scout's reflexes and loses the scout's willingness to leave.</p>
 <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Threat</td><td>4</td></tr><tr><td>Attack</td><td>5</td></tr><tr><td>Hit points</td><td>13</td></tr><tr><td>Speed tiles</td><td>7</td></tr></tbody></table>
 <p>Its attack of 5 is inherited rather than declared — this document's frontmatter says nothing about it, and changing the scout changes it here. Its shield, sword replace the scout's outright, because a list is a statement about a whole set: a captain carrying a shield and a sword is not also still carrying a sling.</p>
-<h3>Design note</h3>
+<details class="aside"><summary><h3>Design note: inheritance, and when it is resolved</h3></summary>
 <p><code>based_on</code> merges block by block. Scalars replace, nested maps merge key by key, lists replace wholesale. It is resolved before anything reads the data, which is why the drift linter catches prose here restating an INHERITED value as readily as a declared one — try writing the attack value out as a literal and the build fails.</p>
+</details>
 </section>
 <section class="doc" id="rule-gm-notes">
 <h2>Notes for the referee</h2>

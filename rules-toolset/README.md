@@ -166,6 +166,13 @@ dropped — an adventure keeping referee notes in a GM module and dropping
 them from the players' handout is the same mechanism with more of it
 switched on. See **[CORPUS.md](CORPUS.md)**.
 
+A book target can also **fold a section away** rather than keeping or
+dropping it, with `collapse` naming the headings — a design note stays
+in the book, findable, and closed, so a reader following a rule is not
+walking through the reasoning behind it to reach the next one. Kept,
+dropped and kept-but-closed are three answers to the same question, and
+all three are the target's to give rather than the document's.
+
 ## Corpora that are not rulesets
 
 A ruleset is one shape of corpus: three kinds, one audience tag, one

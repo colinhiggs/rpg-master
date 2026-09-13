@@ -161,7 +161,15 @@ class Target:
     Losing content from a book is the failure that matters there, so a
     book keeps by default; leaking a design note into a tooltip or a
     secret into a handout is the failure that matters in those, so they
-    drop by default."""
+    drop by default.
+
+    `collapse` names sections this target folds away, and is the third
+    answer to a question the other two already answer differently. A
+    section can be kept, dropped by audience, or -- now -- kept and
+    closed: present, findable, and not in the way of somebody reading
+    the rule. The corpus supplies the headings, so the toolset collapses
+    what it is told to and knows nothing about what makes a section an
+    aside in any particular corpus."""
 
     name: str
     shape: str
@@ -171,12 +179,14 @@ class Target:
     root: str = None
     css: str = None
     blocks: tuple = None
+    collapse: tuple = ()
 
     @classmethod
     def from_mapping(cls, name: str, raw):
         raw = _mapping(raw, f"target '{name}'")
         _no_unknown_keys(raw, ("shape", "audiences", "select", "output",
-                               "root", "css", "blocks"), f"target '{name}'")
+                               "root", "css", "blocks", "collapse"),
+                         f"target '{name}'")
         if "shape" not in raw:
             raise RuleError(f"{PROFILE_FILE}: target '{name}' needs a 'shape'")
         shape = _one_of(raw["shape"], SHAPES, f"target '{name}' shape")
@@ -212,10 +222,29 @@ class Target:
         blocks = raw.get("blocks")
         if shape == "data" and blocks is None:
             blocks = (DEFAULT_BLOCK,)
+
+        collapse = _sequence(raw.get("collapse"), f"target '{name}' collapse")
+        if collapse and shape != "book":
+            # Not a warning. A snippet or a data file has no folding to
+            # do, so a corpus that wrote this here meant it for the book
+            # and has put it somewhere it will silently do nothing.
+            raise RuleError(
+                f"{PROFILE_FILE}: target '{name}' has 'collapse' but its shape "
+                f"is '{shape}'. Only a book renders headings, so a collapse "
+                "list on any other shape would never do anything."
+            )
+        for heading in collapse:
+            if not str(heading).strip():
+                raise RuleError(
+                    f"{PROFILE_FILE}: target '{name}' collapse has an empty "
+                    "heading, which would match every section in the corpus"
+                )
+
         return cls(
             name=name, shape=shape, audiences=audiences, select=select,
             output=raw.get("output"), root=raw.get("root"), css=raw.get("css"),
             blocks=_sequence(blocks, f"target '{name}' blocks") or None,
+            collapse=collapse,
         )
 
     def action(self, tag: str) -> str:

@@ -86,11 +86,26 @@ references:
 # --- Outputs --------------------------------------------------------
 # Four targets over three shapes. `handout` and `book` are the same
 # shape with different answers about who is reading.
+#
+# `collapse` is the third answer to the question `audiences` answers.
+# A section can be kept, dropped, or kept and closed -- rendered as a
+# <details> the reader opens if they want it. It is per target, which is
+# the point of declaring it here rather than in the documents: the same
+# "Design note" is folded away in the book and absent from the handout,
+# and neither document knows which book it is being read in.
+#
+# A name matches a whole heading or a prefix of one ending at a colon or
+# a dash, so "Design note" catches `## Design note: inheritance, and
+# when it is resolved` without the corpus listing every variant. The
+# far bank has both names below, one after the other, which is the case
+# worth having a fixture for: an aside closed by the next heading rather
+# than by the end of the document.
 targets:
   book:
     shape: book
     root: supplement
     audiences: { default: keep }
+    collapse: ["Design note", "Running it"]
     output: build/book.html
   handout:
     shape: book
