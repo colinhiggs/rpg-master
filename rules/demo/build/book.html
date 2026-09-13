@@ -42,6 +42,18 @@ nav ol ol { padding-left: 18px; margin: 4px 0; }
 nav li { margin: 5px 0; }
 nav ol ol li { margin: 2px 0; font-size: 13px; }
 .related { font-family: system-ui, sans-serif; font-size: 13px; color: #6e7280; margin-top: 18px; }
+details.aside { margin: 26px 0; border-top: 1px solid #2a2c36; padding-top: 8px; }
+details.aside > summary { cursor: pointer; list-style: none; color: #6e7280;
+        font-family: system-ui, sans-serif; font-size: 12px; text-transform: uppercase;
+        letter-spacing: .06em; padding: 4px 0; }
+details.aside > summary::-webkit-details-marker { display: none; }
+details.aside > summary::before { content: "\25B8"; display: inline-block;
+        width: 1.1em; transition: transform .12s ease; }
+details.aside[open] > summary::before { transform: rotate(90deg); }
+details.aside > summary:hover { color: #a8acb8; }
+details.aside > summary > * { display: inline; font: inherit; color: inherit;
+        margin: 0; border: none; padding: 0; letter-spacing: inherit; }
+details.aside[open] > summary { color: #a8acb8; margin-bottom: 6px; }
 footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid #2a2c36;
          font-family: system-ui, sans-serif; font-size: 12px; color: #5d616e; }
 </style>

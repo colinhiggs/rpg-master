@@ -788,10 +788,43 @@ def _alignment_of(cell: str):
 # If you later add a dependency, swap this one function out for
 # markdown/mistune - nothing else in the pipeline depends on it.
 # ---------------------------------------------------------------------
-def render_markdown(text: str, heading_offset: int = 0) -> str:
+# Separators a corpus may put between a collapsible heading's name and
+# the rest of its title. "Design note" has to match "Design note: why
+# the axe is the cheap one" without also matching "Design notes we
+# abandoned", so a prefix match alone is too loose and an exact match
+# too tight.
+_TITLE_SEPARATORS = (":", "-", "\u2013", "\u2014")
+
+
+def collapses(title: str, names) -> bool:
+    """Whether this heading is one the target folds away.
+
+    A name matches the whole title, or a prefix of it ending at a
+    separator -- so one declared "Design note" catches both the bare
+    heading and every "Design note: ..." variant without the corpus
+    having to enumerate them. Case-insensitive, because no corpus means
+    two different things by two spellings of the same heading."""
+    plain = title.strip().casefold()
+    for name in names:
+        name = str(name).strip().casefold()
+        if not name:
+            continue
+        if plain == name:
+            return True
+        if plain.startswith(name) and plain[len(name):].lstrip()[:1] in _TITLE_SEPARATORS:
+            return True
+    return False
+
+
+def render_markdown(text: str, heading_offset: int = 0, collapse=()) -> str:
     """heading_offset shifts every heading down by N levels, so a
     document included three levels deep nests under its parents instead
-    of sitting alongside them."""
+    of sitting alongside them.
+
+    `collapse` names headings to render as a closed <details>, which
+    runs from that heading to the next one at the same level or higher.
+    The heading stays a heading inside the <summary>, so the document
+    outline a screen reader walks is the same one it was before."""
 
     def inline(s):
         s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
@@ -803,6 +836,11 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
     buffer = []
     list_buffer = []
     table_buffer = []
+    # The source depth of the collapsible heading currently open, or
+    # None. Only one can be open at a time: a nested collapsible section
+    # would be an aside inside an aside, which nothing has wanted and
+    # which closes on the same rule anyway.
+    open_aside = None
 
     def flush_para():
         if buffer:
@@ -863,8 +901,24 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
         if heading:
             flush_para()
             flush_list()
-            level = min(len(heading.group(1)) + heading_offset, 6)
-            html_parts.append(f"<h{level}>{inline(heading.group(2))}</h{level}>")
+            depth = len(heading.group(1))
+            level = min(depth + heading_offset, 6)
+            title = heading.group(2)
+            # A heading at this depth or shallower ends the open aside.
+            # Compared on the SOURCE depth rather than the rendered
+            # level, because the offset clamps at 6 and two headings
+            # that clamp together are still not siblings.
+            if open_aside is not None and depth <= open_aside:
+                html_parts.append("</details>")
+                open_aside = None
+            if collapse and collapses(title, collapse):
+                html_parts.append(
+                    f'<details class="aside"><summary>'
+                    f"<h{level}>{inline(title)}</h{level}></summary>"
+                )
+                open_aside = depth
+                continue
+            html_parts.append(f"<h{level}>{inline(title)}</h{level}>")
             continue
         item = re.match(r"^[-*]\s+(.*)$", line)
         if item:
@@ -885,6 +939,11 @@ def render_markdown(text: str, heading_offset: int = 0) -> str:
     flush_para()
     flush_list()
     flush_table()
+    if open_aside is not None:
+        # The common case, in fact: an aside is usually the last section
+        # of a document, so it runs to the end rather than being closed
+        # by a sibling.
+        html_parts.append("</details>")
     return "\n".join(html_parts)
 
 

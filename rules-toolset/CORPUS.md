@@ -182,6 +182,7 @@ targets:
 | `output` | all | Where `build.py` writes it, relative to the corpus. A driver passing its own path does not need it |
 | `root` | `book` | The document the book starts at. Falls back to the first of `roots` |
 | `css` | `book` | Replaces the built-in stylesheet. This is what makes a printable booklet a parameter rather than a fourth shape |
+| `collapse` | `book` | Headings to render folded away. See below |
 | `blocks` | `data` | Which data blocks to emit. Default `[mechanics]` |
 
 **`default` is required** on anything carrying prose. Not "unlisted tags
@@ -201,6 +202,56 @@ that genuinely wants a player-facing data file says
 
 The default is three targets — `book`, `snippets` and `mechanics` —
 writing the three files a ruleset has always written.
+
+#### `collapse`: a section kept and closed
+
+`audiences` answers "who reads this section" with keep or drop.
+`collapse` is the third answer: **kept and closed.** The section is in
+the book, findable, and folded away behind its own heading, so a reader
+following a rule is not walking through the reasoning that produced it
+to get to the next one.
+
+```yaml
+targets:
+  book:
+    shape: book
+    audiences: { default: keep }
+    collapse: ["Design note", "Running it"]
+```
+
+It is a list of **heading titles**, and it belongs to the target rather
+than to the documents. That is the point of putting it here: the same
+section can be folded in one book, absent from a handout, and open in a
+third, and no document has to know which book it is being read in. A
+single name may be written without the list.
+
+A name matches a whole heading, or a prefix of one ending at a colon,
+hyphen or dash — so one declared `Design note` catches
+
+```markdown
+## Design note
+## Design note: why the axe is the cheap one
+## Design note — the ladder
+```
+
+without the corpus enumerating them, and does **not** catch
+`## Design notes we abandoned`, which is a different section that
+happens to start with the same words. Matching ignores case.
+
+A folded section runs from its heading to the next heading at the same
+level or higher, so subsections stay inside it; usually it runs to the
+end of the document, which is where an aside tends to live. It renders
+as a closed `<details>` with the heading kept inside the `<summary>`,
+so the document outline a screen reader walks is the one it was before.
+
+Two things worth knowing. `collapse` on a target whose shape is not
+`book` is an error rather than a no-op — nothing else renders headings,
+so a corpus that wrote it there meant it for the book and has put it
+where it would silently do nothing. And a target supplying its own
+`css` replaces the built-in stylesheet entirely, including the rules
+that style a fold: the `<details>` still works, because that is the
+browser's own behaviour, but it will look like the browser's rather
+than like the book's.
 
 ---
 

@@ -25,7 +25,7 @@ outright, because a list is a statement about a whole set: a captain
 carrying a shield and a sword is not also still carrying a sling.
 
 {% book-only %}
-## Design note
+## Design note: inheritance, and when it is resolved
 
 `based_on` merges block by block. Scalars replace, nested maps merge key
 by key, lists replace wholesale. It is resolved before anything reads

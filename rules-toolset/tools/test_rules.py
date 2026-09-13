@@ -21,6 +21,7 @@ from rulesc import (
     IncludeCycleError, RuleError, lint,
     compile_docs, detect_cycles, include_order, render_markdown,
 )
+from rulesc.compile import collapses
 
 TOOLSET_ROOT = Path(__file__).parent.parent       # .../rpg-master/rules-toolset
 
@@ -2049,6 +2050,91 @@ It leads {{ goblin:mechanics.typical_number }} of them.
 
 
 # ---------------------------------------------------------------------
+print("\nCollapsible sections:")
+
+check("a heading matches its own name", collapses("Design note", ["Design note"]))
+check("matching ignores case", collapses("DESIGN NOTE", ["design note"]))
+check("a suffix after a colon still matches",
+      collapses("Design note: why the axe is the cheap one", ["Design note"]))
+check("a suffix after an em dash still matches",
+      collapses("Design note \u2014 the ladder", ["Design note"]))
+# The reason a bare prefix match is not enough: this heading starts with
+# the declared name and is a different section.
+check("a longer word starting with the name does not match",
+      not collapses("Design notes we abandoned", ["Design note"]))
+check("an unrelated heading does not match", not collapses("Example", ["Design note"]))
+check("an empty declared name matches nothing rather than everything",
+      not collapses("Example", [""]))
+
+folded = render_markdown("## Design note\n\nWhy it is so.\n", collapse=["Design note"])
+check("a folded section renders as a closed details",
+      folded.startswith('<details class="aside"><summary><h2>Design note</h2></summary>'),
+      folded)
+check("its body is inside it", "<p>Why it is so.</p>" in folded and folded.endswith("</details>"),
+      folded)
+check("nothing is folded when the target names nothing",
+      "<details" not in render_markdown("## Design note\n\nWhy it is so.\n"))
+
+# The extent rule: to the next heading at the same level or higher.
+two = render_markdown("## Design note\n\nA.\n\n## Example\n\nB.\n",
+                      collapse=["Design note"])
+check("a sibling heading closes the fold",
+      two.index("</details>") < two.index("<h2>Example</h2>"), two)
+check("what follows the fold is outside it", two.count("<details") == 1, two)
+
+nested = render_markdown("## Design note\n\nA.\n\n### Deeper\n\nB.\n\n## After\n\nC.\n",
+                         collapse=["Design note"])
+check("a deeper heading stays inside the fold",
+      nested.index("<h3>Deeper</h3>") < nested.index("</details>"), nested)
+check("the next sibling still closes it",
+      nested.index("</details>") < nested.index("<h2>After</h2>"), nested)
+
+trailing = render_markdown("## Rule\n\nA.\n\n## Design note\n\nB.\n",
+                           collapse=["Design note"])
+check("a fold running to the end of the document is closed",
+      trailing.endswith("</details>") and trailing.count("<details") == 1, trailing)
+
+offset = render_markdown("## Design note\n\nA.\n", heading_offset=2,
+                         collapse=["Design note"])
+check("the heading inside the summary carries the offset",
+      "<summary><h4>Design note</h4></summary>" in offset, offset)
+
+# A folded section is content, not a container: lists and tables inside
+# it must still be flushed before it closes.
+rich = render_markdown("## Design note\n\n- one\n- two\n\n## After\n\nB.\n",
+                       collapse=["Design note"])
+check("a list inside a fold is closed before the fold is",
+      rich.index("</ul>") < rich.index("</details>"), rich)
+
+# A profile check: the field is book-only, and says so rather than
+# silently doing nothing.
+try:
+    rulesc.Profile.from_mapping({
+        "targets": {"snippets": {"shape": "snippets", "audiences": {"default": "drop"},
+                                 "collapse": ["Design note"]}}})
+    check("collapse on a non-book target is refused", False, "no error raised")
+except RuleError as e:
+    check("collapse on a non-book target is refused", "Only a book renders headings" in str(e), str(e))
+try:
+    rulesc.Profile.from_mapping({
+        "targets": {"book": {"shape": "book", "root": "rulebook",
+                             "audiences": {"default": "keep"}, "collapse": [" "]}}})
+    check("an empty collapse name is refused", False, "no error raised")
+except RuleError as e:
+    check("an empty collapse name is refused", "empty heading" in str(e), str(e))
+
+profile = rulesc.Profile.from_mapping({
+    "targets": {"book": {"shape": "book", "root": "rulebook",
+                         "audiences": {"default": "keep"},
+                         "collapse": "Design note"}}})
+check("a single collapse name may be written without a list",
+      profile.targets["book"].collapse == ("Design note",),
+      str(profile.targets["book"].collapse))
+check("a book target declaring no collapse gets an empty one",
+      rulesc.Profile.default().targets["book"].collapse == ())
+
+
+# ---------------------------------------------------------------------
 print("\nLint against many roots, or none:")
 
 tmp = with_temp_rules({
@@ -2123,6 +2209,19 @@ else:
     check("the handout omits whole GM documents",
           'id="rule-gm-notes"' in book and 'id="rule-gm-notes"' not in handout)
     check("no directive markers survive into either", "{%" not in book and "{%" not in handout)
+    check("the book folds away the sections the target names",
+          book.count('<details class="aside">') == 6, book.count('<details class="aside">'))
+    check("every folded section is closed",
+          book.count('<details class="aside">') == book.count("</details>"))
+    check("a folded section is closed, not open -- the reader opens it",
+          "<details open" not in book and 'class="aside" open' not in book)
+    check("the heading survives inside the summary, so the outline does",
+          "<summary><h4>Running it</h4></summary>" in book)
+    check("a name matches a heading that carries a suffix",
+          "<summary><h3>Design note: inheritance, and when it is resolved</h3></summary>"
+          in book)
+    check("a target that names none folds none",
+          "<details" not in handout)
 
 
 print(f"\n{passed} passed, {failed} failed")
