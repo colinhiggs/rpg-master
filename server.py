@@ -31,6 +31,16 @@ async def broadcast_state():
     await sio.emit("state", data.snapshot())
 
 
+def _may_edit(sid, token):
+    """A player may change their own token; the DM may change anything.
+    The same check three handlers were making inline before there were
+    three of them."""
+    player = data.get_player(sid)
+    if not player or not token:
+        return False
+    return player["role"] == "dm" or token["ownerId"] == sid
+
+
 @sio.event
 async def connect(sid, environ):
     pass  # nothing to do until the client sends "join"
@@ -39,7 +49,12 @@ async def connect(sid, environ):
 @sio.event
 async def join(sid, payload):
     payload = payload or {}
-    await data.add_player(sid, payload.get("name"), payload.get("role"))
+    # `pools` is whatever the player typed for the tracks the ruleset
+    # cannot state a starting value for — in Ico that is all four of
+    # them, because every one derives from a character sheet the server
+    # does not hold. Absent, they come up as zero for filling in later.
+    await data.add_player(sid, payload.get("name"), payload.get("role"),
+                          payload.get("pools"))
     player = data.get_player(sid)
     await sio.emit("joined", {"selfId": sid, "tokenId": player["tokenId"]}, to=sid)
     await broadcast_state()
@@ -48,12 +63,9 @@ async def join(sid, payload):
 @sio.event
 async def moveToken(sid, payload):
     payload = payload or {}
-    player = data.get_player(sid)
     token = data.get_token(payload.get("tokenId"))
-    if not player or not token:
-        return
     # Players may only move their own token; the DM may move anything.
-    if player["role"] != "dm" and token["ownerId"] != sid:
+    if not _may_edit(sid, token):
         return
     await data.move_token(token["id"], payload.get("x", token["x"]), payload.get("y", token["y"]))
     await broadcast_state()
@@ -66,7 +78,7 @@ async def spawnToken(sid, payload):
     if not player or player["role"] != "dm":
         return
     await data.spawn_token(
-        payload.get("name"), payload.get("color"), payload.get("hp"),
+        payload.get("name"), payload.get("color"), payload.get("pools"),
         payload.get("x"), payload.get("y"), payload.get("kind", "goblin"),
     )
     await broadcast_state()
@@ -83,19 +95,50 @@ async def removeToken(sid, payload):
 
 
 @sio.event
-async def setHp(sid, payload):
+async def setPool(sid, payload):
+    """Set one pool's current value outright."""
     payload = payload or {}
-    player = data.get_player(sid)
     token = data.get_token(payload.get("tokenId"))
-    if not player or not token:
-        return
-    if player["role"] != "dm" and token["ownerId"] != sid:
+    if not _may_edit(sid, token):
         return
     try:
-        hp = int(payload.get("hp"))
+        value = int(payload.get("value"))
     except (TypeError, ValueError):
         return
-    await data.set_hp(token["id"], hp)
+    await data.set_pool(token["id"], payload.get("pool"), value)
+    await broadcast_state()
+
+
+@sio.event
+async def setPoolMax(sid, payload):
+    """Set one pool's maximum — the table filling in the numbers the
+    ruleset derives from a character sheet this server has not got."""
+    payload = payload or {}
+    token = data.get_token(payload.get("tokenId"))
+    if not _may_edit(sid, token):
+        return
+    try:
+        value = int(payload.get("value"))
+    except (TypeError, ValueError):
+        return
+    await data.set_pool_max(token["id"], payload.get("pool"), value)
+    await broadcast_state()
+
+
+@sio.event
+async def damage(sid, payload):
+    """Take damage off a token through the ruleset's own damage order,
+    rather than making whoever is at the keyboard work out which pool
+    it comes off. A negative amount heals, in reverse order."""
+    payload = payload or {}
+    token = data.get_token(payload.get("tokenId"))
+    if not _may_edit(sid, token):
+        return
+    try:
+        amount = int(payload.get("amount"))
+    except (TypeError, ValueError):
+        return
+    await data.apply_damage(token["id"], amount)
     await broadcast_state()
 
 
