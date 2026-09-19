@@ -100,17 +100,21 @@ looks like when it arrives.*
   six attributes and a mastery total that the book already knows. The
   server could offer the list and fill the token in.
 
-  One thing to settle first, because it is a question about the rules
-  and not about the server. A creature's stat block states its pools
-  *directly* rather than deriving them, and for the goblin they do not
-  agree: `constitution` is `8` and `core_hit_points` is `8`, which
-  matches, but `stamina` is `5` where `stamina_base` would make it `8`,
-  and `spirit` is `0` against a willpower of `8`. Spirit `0` is
-  obviously deliberate — a goblin has magical and spiritual
-  disciplines outlawed, so it never spends spirit. Stamina `5` is not
-  obviously anything, and until somebody says whether it is a
-  considered number or a slip, a server that seeded from the block
-  would be propagating it either way.
+  The stamina discrepancy that was blocking this is settled: the
+  goblin's `5` against a constitution of `8` was a slip, and
+  `SHARING.md` now states the convention — a creature's stamina is its
+  constitution and its spirit its willpower, the same derivation a
+  character gets, and above that means advancement has widened it.
+
+  What is left is a question rung 2 created rather than found. Seed a
+  token from a creature's **attributes** and the pools derive: a goblin
+  comes out with spirit `8`, because its willpower is `8`. Seed from
+  the creature's **stated pools** and spirit is `0`, which is what the
+  block says and is deliberate for a creature with the magical and
+  spiritual disciplines outlawed. Both are defensible and they
+  disagree, so the server has to be told which the stat block is: the
+  character's numbers to derive from, or the finished creature to copy.
+  The ruleset calls that one open too.
 - **Dice notation is `XdY+Z` and nothing else.** No advantage or
   disadvantage, no exploding dice, no pools. This is deliberately
   downstream of the entry above rather than a gap in its own right:
