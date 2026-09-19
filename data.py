@@ -13,6 +13,7 @@
 # next event is processed. That's what makes it safe for each mutator
 # below to read-modify-write the module-level `_state` dict directly.
 
+import copy
 import json
 import random
 import re
@@ -55,12 +56,20 @@ _state = {
     # a ruleset you might since have changed is worse than none.
     "ruleset": RULES.as_json(),
     "players": {},   # sid -> { id, name, role, tokenId }  — NOT persisted, see load()
-    "tokens": {},    # tokenId -> { id, name, x, y, color, kind, attributes, pools, ownerId, isNpc }
+    "tokens": {},    # tokenId -> { id, name, x, y, color, kind, attributes, pools, characterId, ownerId, isNpc }
+    # Characters are stored apart from tokens on purpose: a character
+    # outlives the fight it was on the map for, one player may have
+    # several, and a character that is not in this fight still exists.
+    # A token that names one has no pools or attributes of its own —
+    # see _sheet() — so there is one set of current values rather than
+    # two that drift apart.
+    "characters": {},  # characterId -> the sheet, see ruleset.fresh_character
     "turnOrder": [],
     "currentTurn": -1,
     "log": [],
 }
 _next_token_id = 1
+_next_character_id = 1
 
 
 def snapshot() -> dict:
@@ -78,6 +87,7 @@ def _migrate_token(token: dict) -> dict:
     other pool starts empty for the table to fill in. Switching ruleset
     between runs makes the old numbers meaningless anyway, which is why
     this is a courtesy rather than a migration worth versioning."""
+    token.setdefault("characterId", None)
     if "attributes" not in token:
         token["attributes"] = RULES.fresh_attributes()
     if "pools" in token:
@@ -116,7 +126,7 @@ async def load():
     sense for a fresh process. Tokens survive so the DM can resume the
     board and have players rejoin their existing characters (matching
     by name is a reasonable next step — not implemented here)."""
-    global _state, _next_token_id
+    global _state, _next_token_id, _next_character_id
     await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT data, next_token_id FROM game_state WHERE id = 1") as cur:
@@ -129,8 +139,13 @@ async def load():
         _state["turnOrder"] = saved.get("turnOrder", [])
         _state["currentTurn"] = saved.get("currentTurn", -1)
         _state["log"] = saved.get("log", [])
+        _state["characters"] = {
+            cid: _refresh_character(c)
+            for cid, c in saved.get("characters", {}).items()
+        }
         _state["players"] = {}  # always fresh — see docstring above
         _next_token_id = row[1]
+        _next_character_id = saved.get("_nextCharacterId", 1)
     return _state
 
 
@@ -143,7 +158,8 @@ async def _save():
                  data = excluded.data,
                  next_token_id = excluded.next_token_id,
                  updated_at = excluded.updated_at""",
-            (json.dumps(_state), _next_token_id, int(time.time())),
+            (json.dumps({**_state, "_nextCharacterId": _next_character_id}),
+             _next_token_id, int(time.time())),
         )
         await db.commit()
 
@@ -160,6 +176,37 @@ def _next_token_id_str() -> str:
     tid = str(_next_token_id)
     _next_token_id += 1
     return tid
+
+
+def _next_character_id_str() -> str:
+    global _next_character_id
+    cid = f"c{_next_character_id}"
+    _next_character_id += 1
+    return cid
+
+
+def _sheet(token):
+    """Where a token's pools and attributes actually live.
+
+    A token linked to a character keeps none of its own: the character
+    is the record and the token is its presence on the map, so damage
+    taken in a fight is damage to the character and is still there next
+    session. An unlinked token — most monsters — carries its own."""
+    if token is None:
+        return None
+    char_id = token.get("characterId")
+    if char_id:
+        return _state["characters"].get(char_id) or token
+    return token
+
+
+def _refresh_character(char):
+    """Recompute what the views show. Derived, cheap, and stored on the
+    character so that it travels with it rather than being worked out
+    again by everything that displays one."""
+    char["warnings"] = RULES.check_character(char)
+    char["totals"] = RULES.character_totals(char)
+    return char
 
 
 def _push_log(who: str, text: str) -> None:
@@ -226,6 +273,7 @@ async def add_player(sid: str, name: str, role: str, pools=None,
             "kind": "hero",
             "attributes": RULES.fresh_attributes(attributes),
             "pools": RULES.fresh_pools(pools, attributes),
+            "characterId": None,
             "ownerId": sid,
             "isNpc": False,
         }
@@ -270,6 +318,7 @@ async def spawn_token(name: str, color: str, pools, x, y, kind: str = "goblin",
         "kind": kind,
         "attributes": RULES.fresh_attributes(attributes),
         "pools": RULES.fresh_pools(pools, attributes),
+        "characterId": None,
         "ownerId": None,
         "isNpc": True,
     }
@@ -297,7 +346,7 @@ async def set_pool(token_id: str, pool_name: str, value: int):
     pool = RULES.pools_by_name.get(pool_name)
     if not token or pool is None:
         return None
-    block = token["pools"].get(pool_name)
+    block = _sheet(token)["pools"].get(pool_name)
     if block is None:
         return None
     block["current"] = pool.clamp(int(value), block["max"])
@@ -317,18 +366,115 @@ async def set_pool_max(token_id: str, pool_name: str, value):
     pool = RULES.pools_by_name.get(pool_name)
     if not token or pool is None:
         return None
-    block = token["pools"].get(pool_name)
+    sheet = _sheet(token)
+    block = sheet["pools"].get(pool_name)
     if block is None:
         return None
     if value is None:
         if pool.derives_from is None:
             return None
         block["derived"] = True
-        block["max"] = pool.max_for(token.get("attributes"))
+        block["max"] = pool.max_for(sheet.get("attributes"))
     else:
         block["max"] = max(0, int(value))
         block["derived"] = False
     block["current"] = pool.clamp(block["current"], block["max"])
+    await _save()
+    return token
+
+
+# ---------------------------------------------------------------------
+# Characters. Stored apart from tokens; see _sheet() for why.
+# ---------------------------------------------------------------------
+async def create_character(name=None, attributes=None, equipment=None):
+    if RULES.character is None:
+        return None            # this ruleset has no character rules
+    char_id = _next_character_id_str()
+    char = RULES.fresh_character(name, attributes, equipment)
+    char["id"] = char_id
+    _state["characters"][char_id] = _refresh_character(char)
+    _push_log("system", f"{char['name']} was written up.")
+    await _save()
+    return char
+
+
+async def update_character(char_id: str, changes: dict):
+    """Apply a partial update. Only the fields a character actually has
+    are taken, so a client cannot invent one; and changing attributes
+    moves the pools that derive from them, exactly as it does on a
+    token."""
+    char = _state["characters"].get(char_id)
+    if not char or not isinstance(changes, dict):
+        return None
+    if "name" in changes:
+        char["name"] = str(changes["name"] or "")[:48] or char["name"]
+    if "notes" in changes:
+        char["notes"] = str(changes["notes"] or "")[:4000]
+    if isinstance(changes.get("attributes"), dict):
+        for attr, value in changes["attributes"].items():
+            if attr in RULES.attributes:
+                try:
+                    char["attributes"][attr] = int(value)
+                except (TypeError, ValueError):
+                    pass
+        RULES.recompute_pools(char)
+    if isinstance(changes.get("equipment"), dict):
+        for slot in ("wielded", "worn", "carried"):
+            if slot in changes["equipment"]:
+                char["equipment"][slot] = [
+                    str(i) for i in (changes["equipment"][slot] or [])
+                ]
+    for free_form in ("skills", "disciplines"):
+        if isinstance(changes.get(free_form), dict):
+            char[free_form] = {str(k): v for k, v in changes[free_form].items()}
+    if isinstance(changes.get("powers"), list):
+        char["powers"] = [str(p) for p in changes["powers"]]
+    _refresh_character(char)
+    await _save()
+    return char
+
+
+async def delete_character(char_id: str):
+    char = _state["characters"].pop(char_id, None)
+    if char is None:
+        return None
+    for token in _state["tokens"].values():
+        if token.get("characterId") == char_id:
+            # The token keeps the numbers it was playing with rather
+            # than blanking: the sheet is gone, the creature is still
+            # standing on the map.
+            token["characterId"] = None
+            token.setdefault("attributes", dict(char.get("attributes") or {}))
+            token.setdefault("pools", copy.deepcopy(char.get("pools") or {}))
+    _push_log("system", f"{char['name']}'s sheet was deleted.")
+    await _save()
+    return char
+
+
+async def assign_character(token_id: str, char_id):
+    """Point a token at a character, or at nothing.
+
+    From here on the token has no pools of its own — _sheet() sends
+    every read and write to the character — so a wound taken in this
+    fight is on the sheet next session."""
+    token = _state["tokens"].get(token_id)
+    if not token:
+        return None
+    if char_id in (None, ""):
+        char = _state["characters"].get(token.get("characterId"))
+        token["characterId"] = None
+        if char is not None:
+            token["attributes"] = dict(char.get("attributes") or {})
+            token["pools"] = copy.deepcopy(char.get("pools") or {})
+        await _save()
+        return token
+    if char_id not in _state["characters"]:
+        return None
+    token["characterId"] = char_id
+    token.pop("pools", None)
+    token.pop("attributes", None)
+    _push_log("system", f"{token['name']} is now "
+                        f"{_state['characters'][char_id]['name']}.")
     await _save()
     return token
 
@@ -343,9 +489,12 @@ async def set_attribute(token_id: str, attr: str, value: int):
     token = _state["tokens"].get(token_id)
     if not token or attr not in RULES.attributes:
         return None
-    token.setdefault("attributes", RULES.fresh_attributes())
-    token["attributes"][attr] = int(value)
-    RULES.recompute_pools(token)
+    sheet = _sheet(token)
+    sheet.setdefault("attributes", RULES.fresh_attributes())
+    sheet["attributes"][attr] = int(value)
+    RULES.recompute_pools(sheet)
+    if sheet is not token:
+        _refresh_character(sheet)
     await _save()
     return token
 
@@ -365,7 +514,7 @@ async def apply_damage(token_id: str, amount: int):
     for pool_name in RULES.damage_order:
         if left <= 0:
             break
-        block = token["pools"].get(pool_name)
+        block = _sheet(token)["pools"].get(pool_name)
         pool = RULES.pools_by_name.get(pool_name)
         if block is None or pool is None:
             continue
@@ -393,7 +542,7 @@ async def heal(token_id: str, amount: int):
     for pool_name in reversed(RULES.damage_order):
         if left <= 0:
             break
-        block = token["pools"].get(pool_name)
+        block = _sheet(token)["pools"].get(pool_name)
         pool = RULES.pools_by_name.get(pool_name)
         if block is None or pool is None:
             continue
@@ -408,7 +557,7 @@ async def heal(token_id: str, amount: int):
 def is_down(token) -> bool:
     """Whether a creature is out of the fight, by the ruleset's own
     threshold rather than by hit points reaching zero."""
-    return RULES.is_down(token)
+    return RULES.is_down(_sheet(token))
 
 
 async def advance_turn():

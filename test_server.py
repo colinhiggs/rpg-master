@@ -434,11 +434,126 @@ async def _ico_state():
               data.get_token(tid2)["pools"]["core"]
               == {"current": 4, "max": 4, "derived": True})
 
+        # Characters: stored apart, and the sheet is where the numbers
+        # live once a token is playing one.
+        char = await data.create_character(
+            "Ashri", {"strength": 16, "dexterity": 14, "constitution": 13,
+                      "intelligence": 10, "willpower": 15, "charisma": 12},
+            {"wielded": ["weapons.sword"], "worn": ["armour.leather"]})
+        check("a character is written up with its pools derived",
+              char["pools"]["core"] == {"current": 13, "max": 13,
+                                        "derived": True})
+        check("and carries what the views need without asking again",
+              char["totals"] == {"attributesSpent": 80, "goldSpent": 30,
+                                 "handsUsed": 1}
+              and char["warnings"] == [])
+        check("it is stored apart from any token",
+              data._state["characters"][char["id"]] is char
+              and char["id"] not in data._state["tokens"])
+
+        await data.assign_character(tid2, char["id"])
+        linked = data.get_token(tid2)
+        check("a linked token keeps no pools of its own",
+              "pools" not in linked and linked["characterId"] == char["id"])
+        await data.apply_damage(tid2, 5)
+        check("so a wound taken on the map is a wound on the sheet",
+              char["pools"]["core"]["current"] == 8)
+        await data.set_attribute(tid2, "willpower", 18)
+        check("and an attribute set through the token moves the sheet",
+              char["attributes"]["willpower"] == 18
+              and char["pools"]["spirit"]["max"] == 18)
+
+        await data.update_character(char["id"],
+                                    {"equipment": {"worn": ["armour.full_plate"]}})
+        check("updating equipment re-counts the purse",
+              char["totals"]["goldSpent"] == 1520)
+        check("and remarks on it", any("gold" in w["text"]
+                                       for w in char["warnings"]))
+        check("an update cannot invent a field",
+              (await data.update_character(char["id"], {"nonsense": 1}))
+              is not None and "nonsense" not in char)
+        check("an attribute the ruleset has not got is ignored",
+              (await data.update_character(
+                  char["id"], {"attributes": {"luck": 9}})) is not None
+              and "luck" not in char["attributes"])
+
+        await data.delete_character(char["id"])
+        orphan = data.get_token(tid2)
+        check("deleting a sheet leaves the token standing, with its numbers",
+              orphan["characterId"] is None
+              and orphan["pools"]["core"]["current"] == 8)
+        check("and the sheet is gone",
+              char["id"] not in data._state["characters"])
+
 
 print("\nOne pool, end to end:")
 asyncio.run(_demo_state())
 print("\nFour pools, end to end:")
 asyncio.run(_ico_state())
+
+
+print("\nCharacters — what the ruleset declares:")
+
+_cs = ico.character
+check("ico declares character rules", _cs is not None)
+check("the attribute budget comes from the book", _cs.attribute_budget == 80)
+check("and its floor and ceiling", (_cs.attribute_min, _cs.attribute_max) == (3, 18))
+check("the starting purse comes from the book", _cs.purse == 150)
+check("the hand count comes from the book", _cs.hands == 2)
+check("the catalogues hold items, and only the blocks are items",
+      len(_cs.items) == 29, str(len(_cs.items)))
+check("a scalar in a catalogue is not offered as an item",
+      "weapons.finesse_size" not in _cs.items
+      and "weapons.dagger" in _cs.items)
+check("an item carries the cost the book gives it",
+      _cs.cost_of("armour.breastplate") == 200)
+check("a two-handed weapon spends both hands, by size",
+      _cs.hands_for("weapons.two_handed_sword") == 2
+      and _cs.hands_for("weapons.sword") == 1)
+check("a ranged weapon spends what it says outright",
+      _cs.hands_for("ranged-weapons.shortbow") == 2
+      and _cs.hands_for("ranged-weapons.sling") == 1)
+check("demo has no character rules, and is not given any",
+      demo.character is None)
+
+_ashri = ico.fresh_character("Ashri", {
+    "strength": 16, "dexterity": 14, "constitution": 13,
+    "intelligence": 10, "willpower": 15, "charisma": 12,
+}, {"wielded": ["weapons.sword", "armour.shield"],
+    "worn": ["armour.leather"]})
+check("a character's pools derive like a token's",
+      _ashri["pools"]["core"]["max"] == 13
+      and _ashri["pools"]["spirit"]["max"] == 15)
+check("and come up whole", _ashri["pools"]["core"]["current"] == 13)
+check("the totals are counted from the book's own costs",
+      ico.character_totals(_ashri)
+      == {"attributesSpent": 80, "goldSpent": 45, "handsUsed": 2})
+check("a legal character draws no remarks", ico.check_character(_ashri) == [])
+
+_over = dict(_ashri)
+_over["equipment"] = {"wielded": ["weapons.two_handed_sword", "armour.shield"],
+                      "worn": ["armour.breastplate"], "carried": []}
+_marks = ico.check_character(_over)
+check("too much gold is remarked on",
+      any("gold" in m["text"] for m in _marks))
+check("too many hands is remarked on",
+      any("hands" in m["text"] for m in _marks))
+check("and both are warnings rather than refusals",
+      all(m["level"] in ("warn", "note") for m in _marks))
+
+_thin = ico.fresh_character("Thin", {"strength": 1})
+_marks = ico.check_character(_thin)
+check("an attribute below the book's minimum is remarked on",
+      any("below the minimum" in m["text"] for m in _marks))
+check("an unspent budget is a note, not a warning",
+      any(m["level"] == "note" and "unspent" in m["text"] for m in _marks))
+_fat = ico.fresh_character("Fat", {a: 18 for a in ico.attributes})
+check("going over the budget says priorities are the only way",
+      any("Priorities" in m["text"] for m in ico.check_character(_fat)))
+check("an item in no catalogue is remarked on",
+      any("not in any catalogue" in m["text"] for m in ico.check_character(
+          ico.fresh_character("X", None, {"carried": ["weapons.spork"]}))))
+
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
