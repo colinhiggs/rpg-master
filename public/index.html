@@ -25,9 +25,9 @@
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
   .panel { position: absolute; pointer-events: auto; background: rgba(20,21,28,.88); border: 1px solid #2a2c36; border-radius: 10px; padding: 10px; backdrop-filter: blur(4px); }
   #sidebar { top: 10px; right: 10px; width: 260px; max-height: calc(100vh - 20px); display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-  #turnbar { top: 10px; left: 10px; width: 300px; }
+  #turnbar { top: 10px; left: 10px; width: 340px; }
   #turnbar h2, #sidebar h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #888; margin: 0 0 8px; }
-  .token-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .token-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
   .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
   .token-row.current { background: rgba(79,142,247,.15); border-radius: 6px; padding: 4px 6px; }
   .pools { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
@@ -38,6 +38,15 @@
   .pool.spent { color: #f7a04f; }
   .pool.down { color: #f75f4f; font-weight: 600; }
   .pool.unset { color: #555; font-style: italic; }
+  .pool.derived .lbl::after { content: "="; margin-left: 2px; color: #4f8ef7; }
+  .attrs { flex-basis: 100%; display: flex; gap: 4px; flex-wrap: wrap; padding: 2px 0 4px 20px; }
+  .attr { font-size: 10px; color: #777; background: #1b1d25; padding: 1px 5px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  .attr:hover { background: #2c2f3b; color: #ddd; }
+  .attr .lbl { color: #555; margin-right: 3px; text-transform: uppercase; }
+  .swatch.expandable { cursor: pointer; outline: 1px solid #3a3d4a; }
+  #spawnAttrs { display: flex; gap: 6px; flex-wrap: wrap; }
+  #spawnAttrs label { font-size: 10px; color: #888; display: flex; flex-direction: column; gap: 2px; text-transform: uppercase; }
+  #spawnAttrs input { width: 48px; padding: 4px; border-radius: 4px; border: 1px solid #333; background: #0e0f13; color: #eee; }
   #spawnPools { display: flex; gap: 6px; flex-wrap: wrap; }
   #spawnPools label { font-size: 11px; color: #888; display: flex; flex-direction: column; gap: 2px; }
   #spawnPools input { width: 64px; padding: 4px; border-radius: 4px; border: 1px solid #333; background: #0e0f13; color: #eee; }
@@ -97,7 +106,8 @@
           <option value="ogre">Ogre (large)</option>
           <option value="hero">Hero-shaped ally</option>
         </select>
-        <div id="spawnPools"><!-- one box per pool the ruleset declares --></div>
+        <div id="spawnAttrs"><!-- one box per attribute the ruleset declares --></div>
+        <div id="spawnPools"><!-- one box per pool the ruleset does not derive --></div>
         <input id="spawnColor" type="text" placeholder="Ring color (e.g. #999999)" value="#999999" />
         <button id="spawnConfirm">Spawn</button>
       </div>
@@ -493,9 +503,18 @@ function renderTurnList(state) {
     const row = document.createElement("div");
     row.className = "token-row" + (i === state.currentTurn ? " current" : "");
 
+    const attrNames = (state.ruleset && state.ruleset.attributes) || [];
     const swatch = document.createElement("span");
-    swatch.className = "swatch";
+    swatch.className = "swatch" + (attrNames.length ? " expandable" : "");
     swatch.style.background = tok.color;
+    if (attrNames.length) {
+      swatch.title = "Click to show this creature's attributes";
+      swatch.onclick = (e) => {
+        e.stopPropagation();
+        expandedAttrs.has(tid) ? expandedAttrs.delete(tid) : expandedAttrs.add(tid);
+        renderTurnList(latestState);
+      };
+    }
     row.appendChild(swatch);
 
     const name = document.createElement("span");
@@ -521,6 +540,7 @@ function renderTurnList(state) {
       if (!block) return;
       const chip = document.createElement("span");
       let cls = "pool";
+      if (block.derived) cls += " derived";
       if (block.max === 0) cls += " unset";
       else if (spec.downAt !== null && spec.downAt !== undefined
                && block.current <= spec.downAt) cls += " down";
@@ -531,14 +551,24 @@ function renderTurnList(state) {
                      + `${block.current}/${block.max}`;
       if (mine(tok)) {
         chip.title = `Click to set ${spec.label.toLowerCase()}; `
-                   + "shift-click to set its maximum";
+                   + "shift-click to set its maximum"
+                   + (spec.derivesFrom
+                        ? ` (it follows ${spec.derivesFrom} until you do; `
+                          + "shift-click and clear the box to hand it back)"
+                        : "");
         chip.onclick = (e) => {
           e.stopPropagation();
           const max = e.shiftKey;
           const val = prompt(
-            `Set ${spec.label}${max ? " maximum" : ""} for ${tok.name}`,
+            `Set ${spec.label}${max ? " maximum" : ""} for ${tok.name}`
+              + (max && spec.derivesFrom
+                   ? `\n(clear the box to let it follow ${spec.derivesFrom} again)`
+                   : ""),
             max ? block.max : block.current);
-          if (val !== null && !isNaN(parseInt(val, 10))) {
+          if (val === null) return;
+          if (max && val.trim() === "" && spec.derivesFrom) {
+            socket.emit("setPoolMax", { tokenId: tid, pool: spec.name, value: null });
+          } else if (!isNaN(parseInt(val, 10))) {
             socket.emit(max ? "setPoolMax" : "setPool",
                         { tokenId: tid, pool: spec.name, value: parseInt(val, 10) });
           }
@@ -547,21 +577,74 @@ function renderTurnList(state) {
       pools.appendChild(chip);
     });
     row.appendChild(pools);
+
+    // Attributes are hidden until asked for: six of them on every row
+    // would drown the pools, and the pools are what you watch during a
+    // fight. They are here at all because the pools follow them now.
+    if (attrNames.length && expandedAttrs.has(tid)) {
+      const attrs = document.createElement("span");
+      attrs.className = "attrs";
+      attrNames.forEach((attr) => {
+        const value = (tok.attributes || {})[attr] || 0;
+        const chip = document.createElement("span");
+        chip.className = "attr";
+        chip.innerHTML = `<span class="lbl">${attr.slice(0, 3)}</span>${value}`;
+        if (mine(tok)) {
+          const follows = specs.filter((sp) => sp.derivesFrom === attr)
+                               .map((sp) => sp.label.toLowerCase());
+          chip.title = `Set ${attr}`
+                     + (follows.length ? ` — ${follows.join(" and ")} follow it`
+                                       : "");
+          chip.onclick = (e) => {
+            e.stopPropagation();
+            const val = prompt(`Set ${attr} for ${tok.name}`, value);
+            if (val !== null && !isNaN(parseInt(val, 10))) {
+              socket.emit("setAttribute",
+                          { tokenId: tid, attr, value: parseInt(val, 10) });
+            }
+          };
+        } else {
+          chip.style.cursor = "default";
+        }
+        attrs.appendChild(chip);
+      });
+      row.appendChild(attrs);
+    }
     el.appendChild(row);
   });
 }
 
 // The spawn form's boxes follow the ruleset too: one per pool, and a
 // pool the ruleset gives a starting value for is pre-filled with it.
+const expandedAttrs = new Set();
 let spawnPoolsBuiltFor = null;
 function renderSpawnPools(state) {
   const specs = poolSpecs(state);
-  const signature = specs.map((p) => `${p.name}:${p.starts}`).join(",");
+  const attrNames = (state.ruleset && state.ruleset.attributes) || [];
+  const signature = attrNames.join(",") + "|"
+                  + specs.map((p) => `${p.name}:${p.starts}:${p.derivesFrom}`).join(",");
   if (signature === spawnPoolsBuiltFor) return;
   spawnPoolsBuiltFor = signature;
+
+  const attrBox = document.getElementById("spawnAttrs");
+  attrBox.innerHTML = "";
+  attrNames.forEach((attr) => {
+    const label = document.createElement("label");
+    label.textContent = attr.slice(0, 3);
+    label.title = attr;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = `spawnAttr_${attr}`;
+    input.placeholder = "—";
+    label.appendChild(input);
+    attrBox.appendChild(label);
+  });
+
   const box = document.getElementById("spawnPools");
   box.innerHTML = "";
-  specs.forEach((spec) => {
+  // A pool the book derives needs no box: fill the attribute in and it
+  // follows. Only the ones nothing can compute are asked for.
+  specs.filter((spec) => !spec.derivesFrom).forEach((spec) => {
     const label = document.createElement("label");
     label.textContent = spec.label;
     const input = document.createElement("input");
@@ -632,8 +715,14 @@ document.getElementById("spawnConfirm").onclick = () => {
     const input = document.getElementById(`spawnPool_${spec.name}`);
     if (input && input.value.trim() !== "") pools[spec.name] = input.value.trim();
   });
+  const attributes = {};
+  ((latestState && latestState.ruleset && latestState.ruleset.attributes) || [])
+    .forEach((attr) => {
+      const input = document.getElementById(`spawnAttr_${attr}`);
+      if (input && input.value.trim() !== "") attributes[attr] = input.value.trim();
+    });
   socket.emit("spawnToken", {
-    name, pools, color, kind,
+    name, pools, attributes, color, kind,
     x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2),
   });
   document.getElementById("spawnForm").classList.remove("open");

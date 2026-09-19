@@ -105,6 +105,46 @@ describe how the server works now rather than how it got there.
   going to −2 and the token greying out at death's door. 76 server
   tests, up from 38.
 
+- **A pool's maximum is computed from the creature, where the book
+  says how.** Three of Ico's four are: core hit points equal
+  constitution, stamina is based on constitution and spirit on
+  willpower. Mastery is not, and that is the book being clear rather
+  than the binding being lazy — mastery hit points are bought.
+
+  **The mechanism, and why it is not a language.** A pool may declare
+  `Attribute(From("hit-points", "core_hp_equals"))`. That mechanic's
+  *value* is the string `constitution`, so the binding resolves the
+  mechanic to an attribute name and the server looks that attribute up
+  on the token. Rename the attribute in the book and this follows.
+  `notes.md`'s case against a DSL is that anything powerful enough for
+  a real ruleset is a programming language with an interpreter and a
+  debugger for an audience of one; an indirection through a name the
+  book already states is not that, and it covers every derivation Ico
+  expresses this way.
+
+  **Override, and why it is needed.** Stamina and spirit are stated as
+  a *base* that advancement widens, so a derived figure is the floor of
+  a real character's maximum rather than the whole of it —
+  `power-sources.md`'s example is Sela at base spirit 15, widened to
+  27. A maximum set by hand stops following its attribute; cleared, it
+  starts again. A pool records which of the two it is, because a
+  recompute has to know.
+
+  **What it found on its first run.** `power-sources.spirit_base` said
+  `will`, and `will` is not one of Ico's six attributes. Every other
+  reference in the ruleset says `willpower`, including the worked
+  example two paragraphs below the value. It survived because prose
+  interpolates it as "a character's will", which reads as English
+  rather than as a dangling reference, and because `sim/model.py` takes
+  `char.attributes["willpower"]` directly instead of looking the name
+  up — so the one consumer that could have caught it was not using it.
+  Fixed in the rules repository; the gates did not move, as they could
+  not have.
+
+  The spawn form is the visible result: six attribute boxes and one
+  pool box, where before there were four pool boxes. 98 server tests,
+  up from 76.
+
 ## State and persistence
 
 *Nothing yet.*

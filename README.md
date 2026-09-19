@@ -117,9 +117,49 @@ ruleset saying something the server would otherwise have had to invent:
   *table* supplies these per token — which is what a virtual tabletop is
   for, and is exactly where this rung stops and the next one begins.
 
+### Where a maximum comes from
+
+Three of Ico's four maxima are not typed in at all — they are computed
+from the creature's attributes, and which attribute is again the book's
+to say:
+
+| pool | binding reads | which says | so the max is |
+|---|---|---|---|
+| core | `hit-points.core_hp_equals` | `constitution` | the creature's constitution |
+| stamina | `power-sources.stamina_base` | `constitution` | the same |
+| spirit | `power-sources.spirit_base` | `willpower` | the creature's willpower |
+| mastery | — | — | typed in: it is *bought* |
+
+So a token carries an `attributes` block too, and setting constitution
+moves core and stamina with it. That is the whole of the formula
+language and it is deliberately not a language: a `Attribute(From(...))`
+resolves a mechanic whose *value is an attribute name*, and looks that
+attribute up. `notes.md`'s case against a DSL is that anything powerful
+enough to express a real ruleset is a programming language, and you end
+up writing an interpreter and a debugger for an audience of one. An
+indirection through a name the book already states is not that.
+
+Two consequences worth knowing:
+
+- **A derived maximum can be overridden, and then it stops following.**
+  Ico states stamina and spirit as a *base* that advancement widens, so
+  the derived figure is the floor of a real character's maximum rather
+  than the whole of it. `power-sources.md`'s own example is Sela, base
+  spirit 15, widened to 27. Set a maximum by hand and it stays; clear
+  it and it goes back to following the attribute.
+- **Binding checks that a derived attribute exists.** A mechanic naming
+  an attribute the ruleset has not got is a dangling reference that
+  prose hides — "a character's will" reads as English whatever the
+  attribute list says. This check is what found
+  `power-sources.spirit_base` saying `will` when the six attributes are
+  strength, dexterity, constitution, intelligence, willpower and
+  charisma.
+
 The client is told all of this with every state, so the spawn form
-grows a box per pool and the initiative list draws a chip per pool,
-without either knowing what a mastery hit point is.
+grows a box per attribute and a box only for the pools nothing derives
+— one, for Ico — and the initiative list draws a chip per pool with a
+marker on the computed ones, without any of it knowing what a mastery
+hit point is.
 
 Pick a ruleset with `$RPG_RULESET` (default `demo`, the one that ships
 in `rules/` and the one this server has in fact always been

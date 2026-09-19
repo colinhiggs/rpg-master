@@ -55,11 +55,16 @@ def mechanic_refs(binding):
     """Every mechanic a binding names, wherever it names one: scalars,
     any pool property, and the damage order."""
     refs = [(rid, key) for rid, key in binding["scalars"].values()]
+    for source in binding.get("attributes", ()):
+        if isinstance(source, ruleset.From):
+            refs.append((source.rule_id, source.key))
     for pool in binding["pools"]:
         for attr in ("starts", "floor", "caps_at_max", "down_at"):
             value = getattr(pool, attr)
             if isinstance(value, ruleset.From):
                 refs.append((value.rule_id, value.key))
+        if pool.derives is not None:
+            refs.append((pool.derives.names.rule_id, pool.derives.names.key))
     if isinstance(binding["damage_order"], ruleset.From):
         refs.append((binding["damage_order"].rule_id,
                      binding["damage_order"].key))
@@ -111,7 +116,9 @@ check("which the book gives a starting maximum for",
 check("and which is the one you go down on",
       demo.vital_pool is demo.pools[0])
 check("a fresh token gets it full",
-      demo.fresh_pools()["hp"] == {"current": 20, "max": 20})
+      demo.fresh_pools()["hp"] == {"current": 20, "max": 20, "derived": False})
+check("demo declares no attributes, so nothing in it derives",
+      demo.attributes == () and all(p.derives_from is None for p in demo.pools))
 check("the provenance names the pools and their order",
       "damage order" in demo.provenance() and "hp" in demo.provenance())
 check("an undeclared need is an AttributeError, not a silent None",
@@ -136,13 +143,67 @@ check("death's door came from the book", ico.vital_pool.down_at == 0)
 check("and core has no floor, because Ico's runs past zero",
       ico.vital_pool.floor is None)
 check("mastery does have a floor", ico.pools_by_name["mastery"].floor == 0)
-check("no pool has a starting maximum the book can state",
-      all(p.supplied_by_table for p in ico.pools))
-check("so a fresh token comes up empty, for the table to fill in",
-      all(b == {"current": 0, "max": 0} for b in ico.fresh_pools().values()))
-check("and takes what the table typed when it types some",
-      ico.fresh_pools({"core": 12, "mastery": 8})["core"]
-      == {"current": 12, "max": 12})
+check("mastery is the only one nothing can compute, because it is bought",
+      [p.name for p in ico.pools if p.supplied_by_table] == ["mastery"])
+check("and takes what the table typed",
+      ico.fresh_pools({"core": 12, "mastery": 8})["mastery"]
+      == {"current": 8, "max": 8, "derived": False})
+
+
+print("\nWhat the book computes, rung 2:")
+
+check("the attribute list comes out of the book",
+      ico.attributes == ("strength", "dexterity", "constitution",
+                         "intelligence", "willpower", "charisma"))
+check("core hit points equal constitution, because hit-points.md says so",
+      ico.pools_by_name["core"].derives_from == "constitution")
+check("stamina is based on constitution",
+      ico.pools_by_name["stamina"].derives_from == "constitution")
+check("and spirit on willpower",
+      ico.pools_by_name["spirit"].derives_from == "willpower")
+check("mastery derives from nothing, because it is bought",
+      ico.pools_by_name["mastery"].derives_from is None)
+
+_attrs = {"constitution": 13, "willpower": 15}
+_fresh = ico.fresh_pools({"mastery": 22}, _attrs)
+check("a creature's pools are computed from its attributes",
+      _fresh["core"]["max"] == 13 and _fresh["stamina"]["max"] == 13
+      and _fresh["spirit"]["max"] == 15)
+check("and the computed ones are marked as following the book",
+      _fresh["core"]["derived"] and not _fresh["mastery"]["derived"])
+check("which reproduces the book's own example — Dune's 13 core hit points",
+      _fresh["core"]["max"] == 13 and _fresh["mastery"]["max"] == 22)
+
+_tok = {"attributes": dict(_attrs), "pools": _fresh}
+_tok["attributes"]["constitution"] = 18
+check("raising an attribute moves what the book hangs off it",
+      ico.recompute_pools(_tok)
+      and _tok["pools"]["core"]["max"] == 18
+      and _tok["pools"]["stamina"]["max"] == 18)
+check("and leaves alone what it does not",
+      _tok["pools"]["spirit"]["max"] == 15
+      and _tok["pools"]["mastery"]["max"] == 22)
+_tok["pools"]["spirit"].update({"max": 27, "derived": False})
+_tok["attributes"]["willpower"] = 18
+check("a maximum the table has overridden stops following its attribute",
+      not ico.recompute_pools(_tok) or _tok["pools"]["spirit"]["max"] == 27)
+check("which is Sela's case: base 15, widened to 27 with advancement points",
+      _tok["pools"]["spirit"]["max"] == 27)
+
+_bad = ruleset.Pool("spirit", "Spirit",
+                    derives=ruleset.Attribute(
+                        ruleset.From("power-sources", "physical_powers_cost")))
+_saved_ico = ruleset.BINDINGS["ico"]["pools"]
+try:
+    ruleset.BINDINGS["ico"]["pools"] = tuple(
+        _bad if p.name == "spirit" else p for p in _saved_ico)
+    msg = raises(ruleset.RulesetUnplayable, ruleset.bind, "ico")
+    check("a pool deriving from something that is not an attribute is caught",
+          msg is not None and "not one of its attributes" in msg, msg)
+    check("and the message names what the ruleset does have",
+          msg is not None and "willpower" in msg)
+finally:
+    ruleset.BINDINGS["ico"]["pools"] = _saved_ico
 check("the grid is the table's, since a map width is not a rule of Ico",
       "this server" in ico.sources["grid_size"])
 check("but the die is the book's",
@@ -253,7 +314,7 @@ async def _demo_state():
         tid = await data.add_player("sid-1", "Ashri", "player")
         tok = data.get_token(tid)
         check("a joining player's token starts full on the book's value",
-              tok["pools"]["hp"] == {"current": 20, "max": 20})
+              tok["pools"]["hp"] == {"current": 20, "max": 20, "derived": False})
         await data.apply_damage(tid, 5)
         check("damage comes off the one pool there is",
               data.get_token(tid)["pools"]["hp"]["current"] == 15)
@@ -274,7 +335,10 @@ async def _demo_state():
         }
         migrated = data._migrate_token(data._state["tokens"]["old"])
         check("a token saved before pools is brought forward",
-              migrated["pools"]["hp"] == {"current": 7, "max": 12})
+              migrated["pools"]["hp"] == {"current": 7, "max": 12,
+                                          "derived": False})
+        check("and gains an attributes block, empty where the game has none",
+              migrated["attributes"] == {})
         check("and loses the fields that no longer mean anything",
               "hp" not in migrated and "maxHp" not in migrated)
 
@@ -338,6 +402,37 @@ async def _ico_state():
               data.get_token(tid)["pools"]["spirit"]["current"] == 2)
         check("a pool the ruleset does not have is refused",
               await data.set_pool(tid, "ectoplasm", 1) is None)
+
+        # Rung 2 through the data layer: type one number, move three.
+        tid2 = (await data.spawn_token("Ashri", "#4f8ef7", {"mastery": 22},
+                                       3, 3, "hero",
+                                       {"constitution": 13, "willpower": 15}))["id"]
+        tok2 = data.get_token(tid2)
+        check("a spawned creature's pools are computed from its attributes",
+              {k: v["max"] for k, v in tok2["pools"].items()}
+              == {"mastery": 22, "core": 13, "stamina": 13, "spirit": 15})
+        await data.set_attribute(tid2, "constitution", 18)
+        tok2 = data.get_token(tid2)
+        check("setting an attribute moves every pool the book hangs off it",
+              tok2["pools"]["core"]["max"] == 18
+              and tok2["pools"]["stamina"]["max"] == 18)
+        check("and not the ones it does not",
+              tok2["pools"]["spirit"]["max"] == 15
+              and tok2["pools"]["mastery"]["max"] == 22)
+        await data.set_pool_max(tid2, "spirit", 27)
+        await data.set_attribute(tid2, "willpower", 18)
+        check("an overridden maximum stops following its attribute",
+              data.get_token(tid2)["pools"]["spirit"]["max"] == 27)
+        await data.set_pool_max(tid2, "spirit", None)
+        check("and can be handed back to the book, picking up the new value",
+              data.get_token(tid2)["pools"]["spirit"]
+              == {"current": 15, "max": 18, "derived": True})
+        check("an attribute the ruleset does not have is refused",
+              await data.set_attribute(tid2, "luck", 9) is None)
+        await data.set_attribute(tid2, "constitution", 4)
+        check("lowering an attribute drags the current value down with the max",
+              data.get_token(tid2)["pools"]["core"]
+              == {"current": 4, "max": 4, "derived": True})
 
 
 print("\nOne pool, end to end:")
