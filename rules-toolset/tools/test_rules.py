@@ -22,6 +22,7 @@ from rulesc import (
     compile_docs, detect_cycles, include_order, render_markdown,
 )
 from rulesc.compile import collapses
+from rulesc.runtime import RulesNotBuilt, load_ruleset
 
 TOOLSET_ROOT = Path(__file__).parent.parent       # .../rpg-master/rules-toolset
 
@@ -2222,6 +2223,79 @@ else:
           in book)
     check("a target that names none folds none",
           "<details" not in handout)
+
+
+# ---------------------------------------------------------------------
+# Reading a built ruleset back. These are the toolset's half of the
+# server wiring: generic, so they run against whichever ruleset was
+# named, and they never name a rule or a mechanic — doing that is
+# knowing a game, which is the consumer's job and not this file's.
+# ---------------------------------------------------------------------
+print("\nReading a built ruleset back:")
+
+_m = load_ruleset(RULESET_NAME, path=RULESET_DIR)
+check("a built ruleset loads by name", bool(_m.rules))
+check("it knows which ruleset it is", _m.name == RULESET_NAME)
+check("the version is the VERSION file's, or None for an unversioned one",
+      _m.version == rulesc.read_version(RULESET_DIR))
+check("it carries the generated-by stamp", bool(_m.generated))
+
+_rule_id = sorted(_m.rules)[0]
+_key = sorted(_m.rules[_rule_id])[0]
+check("a mechanic that exists reads back",
+      _m.mech(_rule_id, _key) == _m.rules[_rule_id][_key])
+check("has() agrees with it", _m.has(_rule_id, _key))
+check("has() is False rather than raising for a missing key",
+      _m.has(_rule_id, "no_such_mechanic_anywhere") is False)
+
+try:
+    _m.mech("no-such-rule", _key)
+    check("an unknown rule raises", False)
+except KeyError as e:
+    check("an unknown rule raises", True)
+    check("and lists the rules the ruleset does have", "it has:" in str(e))
+try:
+    _m.mech(_rule_id, "no_such_mechanic_anywhere")
+    check("an unknown mechanic raises", False)
+except KeyError as e:
+    check("an unknown mechanic raises", True)
+    check("and lists the mechanics that rule does have", "it has:" in str(e))
+
+check("an explicit default is returned instead of raising",
+      _m.mech("no-such-rule", _key, default="fallback") == "fallback")
+check("a default covers a missing key too",
+      _m.mech(_rule_id, "no_such_mechanic_anywhere", default=7) == 7)
+
+check("snippets read back for a ruleset that builds them",
+      isinstance(_m.snippet_ids(), tuple))
+check("and the metadata keys are not offered as documents",
+      not any(i.startswith("_") for i in _m.snippet_ids()))
+
+_other = load_ruleset(RULESET_NAME, path=RULESET_DIR)
+_other.rules = {}
+check("two loads are independent, not one piece of global state",
+      bool(_m.rules))
+
+with tempfile.TemporaryDirectory() as _tmp:
+    _empty = Path(_tmp) / "unbuilt"
+    (_empty / "rules").mkdir(parents=True)
+    try:
+        load_ruleset("unbuilt", path=_empty)
+        check("a ruleset that is not built raises", False)
+    except RulesNotBuilt as e:
+        check("a ruleset that is not built raises", True)
+        check("and says to build it rather than naming a default",
+              "build.py" in str(e))
+
+    _notmech = Path(_tmp) / "notmech"
+    (_notmech / "build").mkdir(parents=True)
+    (_notmech / "build" / "mechanics.json").write_text('{"nope": {}}',
+                                                       encoding="utf-8")
+    try:
+        load_ruleset("notmech", path=_notmech)
+        check("a mechanics file with no rules block raises", False)
+    except RulesNotBuilt:
+        check("a mechanics file with no rules block raises", True)
 
 
 print(f"\n{passed} passed, {failed} failed")
