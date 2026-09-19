@@ -91,11 +91,61 @@ looks like when it arrives.*
 
 - **`snapshot()` hands out the live state dict.** It returns `_state`
   itself rather than a copy, which is safe today only because its one
-  caller serialises it immediately and throws the result away. It is
-  the first thing standing in the way of two entries below — a
-  per-player view of the board, and more than one game on one server.
-  Both need `snapshot()` to become a projection of the state rather
-  than the state.
+  caller serialises it immediately and throws the result away. What it
+  wants to become is a *projection*: not the state but the state as one
+  particular viewer is entitled to see it — `snapshot_for(sid)` in
+  signature, and in `server.py` `broadcast_state()` ceasing to be one
+  emit to everyone and becoming a loop of per-`sid` emits. It is the
+  first thing standing in the way of two entries elsewhere on this
+  list: a per-player view of the board, and more than one game on one
+  server.
+
+  Two things are tangled in that and separate cleanly. **The copy** is
+  a hazard on its own terms, whatever any filtering does: handing back
+  a live reference to mutable server state is safe only while nobody
+  keeps it, and nobody keeps it only by luck of there being one caller.
+  **The filter** is the part that has to be server-side. Sending
+  everything and having the client decline to draw it is not fog of
+  war — the data is in the browser, and the browser belongs to the
+  player.
+
+  Four things to go in with eyes open about. The third is the one that
+  makes this harder than it sounds.
+
+  - **It makes the entry below worse before it makes it better.** One
+    serialisation per mutation becomes one per connected client, at
+    exactly the moment the whole-game broadcast is already the thing
+    that stops scaling first. The two probably want solving together,
+    which is an argument for per-token events or a diff rather than a
+    state blob.
+  - **Multiple rooms is the same change, not a later one.** "Which room
+    is this sid in" and "what may this sid see" are one question asked
+    on two axes, and the projection narrows on both. Doing fog of war
+    first and rooms second means building the same seam twice.
+  - **`turnOrder` cannot be filtered, and cannot not be.** It is a list
+    of token ids, and `currentTurn` is an *index into it*. Filter a
+    hidden monster out of a client's copy and every index past it is
+    wrong for that client, so the turn highlight — which
+    `syncScene()` computes as `state.turnOrder[state.currentTurn]` —
+    lands on the wrong token. Leave the monster in and the client has
+    been told there is something it cannot see, which is the whole of
+    what fog of war was for. The way out is that `currentTurn` stops
+    being an index: send the current token's id, or an initiative
+    `position` per token, and the list stops needing to be the same
+    length for everybody. That is the same shape of fix as the
+    relational-migration entry below wants for the same field, which
+    is a reason to do them together.
+  - **A token vanishing from a view is not a token being removed.**
+    `syncScene()` builds a `seen` set from the state it was handed and
+    deletes every mesh not in it, so a monster stepping out of vision
+    takes exactly the code path a monster being killed takes. Today
+    that is correct because the only way a token leaves a client's
+    state is deletion. Once a view can shrink it is a bug, and the
+    client needs to be told which of the two happened.
+
+  The log will eventually want the same treatment for the same reason:
+  a DM's private roll currently goes into the one `log` array every
+  client receives.
 - **Every mutation writes the whole game and tells everyone the whole
   game.** `_save()` JSON-dumps all of `_state` into one row on every
   change, and `broadcast_state()` emits all of it to every connected
@@ -110,7 +160,8 @@ looks like when it arrives.*
 - **One room, one game.** Nothing namespaces the state, so a second
   group needs a second server. This is also the natural trigger for the
   relational migration above: "which room does this row belong to" is
-  the question a JSON blob answers worst.
+  the question a JSON blob answers worst. The narrowing itself would
+  live in the projection described at the top of this section.
 - **The log is capped at two hundred entries and the overflow is
   gone.** `_push_log` pops from the front, and the trimmed list is what
   gets persisted, so a long session's early history exists nowhere. No
