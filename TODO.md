@@ -231,6 +231,27 @@ looks like when it arrives.*
   handful of lines against the functions in `server.py`, and the file
   to put them in is already there.
 
+## Characters
+
+- **A character's skills, disciplines and powers are stored and
+  checked by nobody.** They are on the sheet as free-form data and show
+  in the detailed view, and nothing counts a skill point, a discipline
+  grade or whether a character may take the power it has taken. That
+  was the deliberate line — see DONE.md — and it is also the obvious
+  next thing, because those three carry most of what makes one
+  character different from another. Ico states budgets for all of them
+  (`character-creation.skill_point_pool`, `starting_discipline_budget`,
+  `starting_powers`), but unlike the attribute spread they are not flat
+  sums: skill ranks cost by focus tier, discipline grades are bought in
+  order, and a power has a band it must be declared within. That is
+  resolution-shaped work rather than budget-shaped, which is why it
+  waits behind the same decision the rules-engine entry does.
+- **Nothing links a player to their character across sessions.** A
+  player joining gets a fresh token, and the DM points it at a sheet by
+  hand. That is the same gap as the reconnect entry below, and the same
+  fix would serve both: match a returning player to what they were
+  playing.
+
 ## The client
 
 - **Every player is a hero and the DM picks from three shapes.**

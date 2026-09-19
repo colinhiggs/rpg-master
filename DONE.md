@@ -153,6 +153,55 @@ describe how the server works now rather than how it got there.
 
 *Nothing yet.*
 
+## Characters
+
+- **Characters are stored, generated and viewed.** A character is its
+  own record, not a token: it outlives the fight it was on the map for,
+  one player may have several, and one nobody is playing still exists.
+  It holds attributes, pools as current-and-maximum, equipment in three
+  slots — wielded, worn, carried — and free-form skills, disciplines,
+  powers and notes.
+
+  **The load-bearing decision is that a linked token has no pools of
+  its own.** `data._sheet()` sends every read and write to the
+  character, so a wound taken in this fight is on the sheet next
+  session and there is one set of current values rather than two that
+  drift. Unlink and the token keeps the numbers it was playing with:
+  the sheet is gone, the creature is still standing there.
+
+  **What is checked was settled deliberately.** The server counts three
+  things against budgets the book states — attribute points spread,
+  gold of equipment, hands of wielded gear — and *remarks* on them.
+  Never refuses. A table that has applied priorities legitimately has
+  more than the standard eighty points, by the rules' own design, and a
+  virtual tabletop that refused to store a character its DM had
+  approved would be wrong about what it is for. Skills, disciplines and
+  powers are stored and shown and validated by nobody: they are real
+  systems with budgets of their own, and half-enforcing them would be
+  worse than plainly not.
+
+  **Items came out of the catalogue rule rather than a list.** A
+  mechanic whose value is a block is an item; a scalar one is a rule
+  about the catalogue. `weapons.dagger` is an item, `weapons.finesse_size`
+  is not. That distinction is the toolset's shape rather than any
+  game's, so the only Ico-specific part is which three documents to
+  read — and 29 items fall out of them with their costs. Hands work the
+  same way twice over: the ranged weapons state `hands` outright and the
+  melee ones leave it to `size` against `two_handed_size`, so the
+  binding reads the stated one where there is one rather than picking a
+  convention and being wrong about half the table.
+
+  Three views, none of which knows what an attribute is: a line for a
+  hover, a sidebar panel, and a full screen that doubles as the form
+  that writes a character up. Pool edits on that screen go out as the
+  ordinary token events, so "this creature took a hit" has one code
+  path whether it happened on the map or on the sheet.
+
+  One thing fixed on the way: `recompute_pools` clamped a current value
+  down with its maximum but never carried it up, so a character written
+  up attribute by attribute came out at nought of thirteen. Undamaged
+  now stays undamaged. 132 server tests, up from 98.
+
 ## The client
 
 *Nothing yet.*

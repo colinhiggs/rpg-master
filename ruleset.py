@@ -148,6 +148,37 @@ class Pool:
         self.down_at = down_at
 
 
+class Character:
+    """What a ruleset says about building and carrying a character.
+
+    Optional: a game can be played at this table without having any
+    character rules the server knows about, which is `demo`, and then
+    the server offers no character screen for it rather than inventing
+    one.
+
+    Everything here is a budget or a catalogue — a number the book
+    states and a list the book carries. None of it is a rule the server
+    works out. The checks it drives WARN and never block: a table that
+    has applied priorities legitimately has more than the standard
+    attribute points, and a virtual tabletop that refused to store a
+    character its DM had approved would be wrong about what it is for."""
+
+    def __init__(self, attribute_budget=None, attribute_min=None,
+                 attribute_max=None, purse=None, hands=None,
+                 two_handed_size=None, catalogues=(), cost_key=None,
+                 size_key=None, hands_key=None):
+        self.attribute_budget = attribute_budget
+        self.attribute_min = attribute_min
+        self.attribute_max = attribute_max
+        self.purse = purse
+        self.hands = hands
+        self.two_handed_size = two_handed_size
+        self.catalogues = catalogues
+        self.cost_key = cost_key
+        self.size_key = size_key
+        self.hands_key = hands_key
+
+
 BINDINGS = {
     # demo states every single value, which is unsurprising: it was
     # written to describe this server before any of this existed. One
@@ -229,6 +260,35 @@ BINDINGS = {
                  derives=Attribute(From("power-sources", "spirit_base"))),
         ),
         "damage_order": From("hit-points", "damage_order"),
+        # Building a character, and what it can carry. Every entry is a
+        # number the book states or a table the book carries.
+        #
+        # `catalogues` names documents whose dict-valued mechanics are
+        # items: weapons.dagger is a dict and so is an item, while
+        # weapons.finesse_size is a string and so is not. That rule is
+        # the toolset's shape rather than Ico's, which is why the
+        # catalogue list is the only Ico-specific part of it.
+        #
+        # Two hands is the budget a wielded item spends against, and an
+        # item of the two-handed size spends both. Ico states both
+        # numbers; the server multiplies nothing.
+        "character": Character(
+            attribute_budget=From("character-creation", "attribute_points"),
+            attribute_min=From("character-creation", "attribute_min"),
+            attribute_max=From("character-creation", "attribute_max"),
+            purse=From("character-creation", "starting_gold"),
+            hands=From("free-hands", "hands_total"),
+            two_handed_size=From("weapons", "two_handed_size"),
+            catalogues=("weapons", "ranged-weapons", "armour"),
+            cost_key="cost_gp",
+            size_key="size",
+            # The ranged weapons state their hands outright; the melee
+            # ones leave it to size. Read the stated one where there is
+            # one, and fall back to size where there is not, rather than
+            # picking one convention and being wrong about half the
+            # table.
+            hands_key="hands",
+        ),
     },
 }
 
@@ -281,12 +341,57 @@ class BoundPool:
         return value
 
 
+class BoundCharacter:
+    """A Character with every budget resolved and every catalogue read."""
+
+    def __init__(self, spec, items, attribute_budget, attribute_min,
+                 attribute_max, purse, hands, two_handed_size):
+        self.spec = spec
+        self.items = items                  # id -> item dict
+        self.attribute_budget = attribute_budget
+        self.attribute_min = attribute_min
+        self.attribute_max = attribute_max
+        self.purse = purse
+        self.hands = hands
+        self.two_handed_size = two_handed_size
+
+    def item(self, item_id):
+        return self.items.get(item_id)
+
+    def cost_of(self, item_id):
+        item = self.items.get(item_id)
+        return 0 if item is None else int(item.get("cost") or 0)
+
+    def hands_for(self, item_id):
+        """How many hands wielding this spends. An item of the size the
+        book calls two-handed takes both; anything else takes one."""
+        item = self.items.get(item_id)
+        if item is None:
+            return 1
+        if item.get("hands") is not None:
+            return int(item["hands"])
+        if self.two_handed_size is not None \
+                and item.get("size") == self.two_handed_size:
+            return 2
+        return 1
+
+    def as_json(self):
+        return {
+            "attributeBudget": self.attribute_budget,
+            "attributeMin": self.attribute_min,
+            "attributeMax": self.attribute_max,
+            "purse": self.purse,
+            "hands": self.hands,
+            "items": self.items,
+        }
+
+
 class Ruleset:
     """The bound ruleset: every need and every pool resolved, with the
     provenance kept so that startup can say where each came from."""
 
     def __init__(self, mechanics, values, sources, pools, damage_order,
-                 attributes=()):
+                 attributes=(), character=None):
         self.mechanics = mechanics
         self.name = mechanics.name
         self.version = mechanics.version
@@ -296,6 +401,7 @@ class Ruleset:
         self.pools_by_name = {p.name: p for p in pools}
         self.damage_order = damage_order
         self.attributes = attributes
+        self.character = character
 
     def __getattr__(self, item):
         try:
@@ -366,8 +472,16 @@ class Ruleset:
                 continue
             maximum = pool.max_for(attributes)
             if maximum != block["max"]:
+                # Undamaged stays undamaged. A creature sitting at its
+                # maximum has taken nothing, so raising the maximum
+                # raises it too — which is also what makes a character
+                # written up attribute by attribute come out whole
+                # rather than at nought out of thirteen. Anything below
+                # its maximum has taken a wound, and keeps it.
+                was_whole = block["current"] >= block["max"]
                 block["max"] = maximum
-                block["current"] = pool.clamp(block["current"], maximum)
+                block["current"] = pool.clamp(
+                    maximum if was_whole else block["current"], maximum)
                 changed = True
         return changed
 
@@ -380,6 +494,107 @@ class Ruleset:
             return False
         return block["current"] <= pool.down_at
 
+    # -- characters --------------------------------------------------
+    def fresh_character(self, name="New character", attributes=None,
+                        equipment=None):
+        """A character, with its pools derived from its attributes the
+        same way a token's are. A character is stored apart from any
+        token: it outlives the fight it was on the map for, and one
+        player may have several."""
+        attrs = self.fresh_attributes(attributes)
+        equipment = equipment or {}
+        return {
+            "name": str(name or "New character")[:48],
+            "attributes": attrs,
+            "pools": self.fresh_pools(None, attrs),
+            "equipment": {
+                slot: [str(i) for i in (equipment.get(slot) or [])]
+                for slot in ("wielded", "worn", "carried")
+            },
+            # Stored and shown, checked by nobody. Ico's skills,
+            # disciplines and powers are real systems with budgets of
+            # their own, and a server that half-enforced them would be
+            # worse than one that plainly does not.
+            "skills": {},
+            "disciplines": {},
+            "powers": [],
+            "notes": "",
+        }
+
+    def check_character(self, char):
+        """What is odd about this character, as a list of remarks.
+
+        Never a refusal. A table that has applied priorities has more
+        than the standard attribute points by the rules' own design, and
+        a DM may hand a character anything they like — so these say what
+        the book's numbers are and leave the judgement where it
+        belongs."""
+        spec = self.character
+        if spec is None:
+            return []
+        out = []
+        attrs = char.get("attributes") or {}
+
+        spent = sum(int(v or 0) for v in attrs.values())
+        if spec.attribute_budget is not None and spent != spec.attribute_budget:
+            over = spent - spec.attribute_budget
+            out.append({
+                "level": "warn" if over > 0 else "note",
+                "text": (f"{spent} attribute points spread, against a budget of "
+                         f"{spec.attribute_budget}"
+                         + (f" — {over} over. Priorities can buy more; nothing "
+                            "else can." if over > 0
+                            else f" — {-over} unspent.")),
+            })
+        for attr, value in attrs.items():
+            value = int(value or 0)
+            if spec.attribute_min is not None and value < spec.attribute_min:
+                out.append({"level": "warn",
+                            "text": f"{attr} is {value}, below the minimum of "
+                                    f"{spec.attribute_min}"})
+            if spec.attribute_max is not None and value > spec.attribute_max:
+                out.append({"level": "warn",
+                            "text": f"{attr} is {value}, above the starting "
+                                    f"maximum of {spec.attribute_max}. Fine "
+                                    "after a race modifier or advancement."})
+
+        equipment = char.get("equipment") or {}
+        carried = [i for slot in ("wielded", "worn", "carried")
+                   for i in equipment.get(slot, [])]
+        unknown = sorted({i for i in carried if spec.item(i) is None})
+        if unknown:
+            out.append({"level": "warn",
+                        "text": "not in any catalogue: " + ", ".join(unknown)})
+        spend = sum(spec.cost_of(i) for i in carried)
+        if spec.purse is not None and spend > spec.purse:
+            out.append({"level": "warn",
+                        "text": f"{spend} gold of equipment, against a starting "
+                                f"purse of {spec.purse}"})
+
+        hands = sum(spec.hands_for(i) for i in equipment.get("wielded", []))
+        if spec.hands is not None and hands > spec.hands:
+            out.append({"level": "warn",
+                        "text": f"wielding {hands} hands' worth with "
+                                f"{spec.hands} hands"})
+        return out
+
+    def character_totals(self, char):
+        """The numbers the views want to show whether or not anything is
+        wrong with them."""
+        spec = self.character
+        if spec is None:
+            return {}
+        equipment = char.get("equipment") or {}
+        carried = [i for slot in ("wielded", "worn", "carried")
+                   for i in equipment.get(slot, [])]
+        return {
+            "attributesSpent": sum(int(v or 0)
+                                   for v in (char.get("attributes") or {}).values()),
+            "goldSpent": sum(spec.cost_of(i) for i in carried),
+            "handsUsed": sum(spec.hands_for(i)
+                             for i in equipment.get("wielded", [])),
+        }
+
     def as_json(self):
         """The ruleset as the client needs to see it: enough to draw the
         pools and label them, and to say what is being played."""
@@ -387,6 +602,7 @@ class Ruleset:
             "name": self.name,
             "version": self.version,
             "attributes": list(self.attributes),
+            "character": self.character.as_json() if self.character else None,
             "pools": [p.as_json() for p in self.pools],
             "damageOrder": list(self.damage_order),
             "gridSize": self.values["grid_size"],
@@ -527,6 +743,55 @@ def bind(name=None, path=None) -> Ruleset:
             "exactly one has to say when a creature is out of the fight."
         )
 
+    # Items. A dict-valued mechanic in a declared catalogue is an item;
+    # a scalar one is a rule about the catalogue and is not. That is a
+    # distinction in the toolset's shape rather than in any game, which
+    # is why only the list of catalogues had to be named here.
+    character = None
+    spec = binding.get("character")
+    if spec is not None:
+        items = {}
+        for catalogue in spec.catalogues:
+            block = mechanics.rules.get(catalogue)
+            if block is None:
+                raise RulesetUnplayable(
+                    f"the '{name}' binding lists '{catalogue}' as an item "
+                    f"catalogue and the ruleset has no such document "
+                    f"(it has: {', '.join(sorted(mechanics.rules))})."
+                )
+            for key, value in block.items():
+                if not isinstance(value, dict):
+                    continue
+                items[f"{catalogue}.{key}"] = {
+                    "id": f"{catalogue}.{key}",
+                    "catalogue": catalogue,
+                    "label": key.replace("_", " "),
+                    "cost": value.get(spec.cost_key),
+                    "size": value.get(spec.size_key),
+                    "hands": value.get(spec.hands_key),
+                    "stats": value,
+                }
+        if not items:
+            raise RulesetUnplayable(
+                f"the '{name}' binding names {list(spec.catalogues)} as item "
+                "catalogues and not one of them holds an item. An item is a "
+                "mechanic whose value is a block; these hold only scalars."
+            )
+        character = BoundCharacter(
+            spec=spec,
+            items=items,
+            attribute_budget=_resolve(spec.attribute_budget, mechanics,
+                                      "the attribute budget"),
+            attribute_min=_resolve(spec.attribute_min, mechanics,
+                                   "the attribute minimum"),
+            attribute_max=_resolve(spec.attribute_max, mechanics,
+                                   "the attribute maximum"),
+            purse=_resolve(spec.purse, mechanics, "the starting purse"),
+            hands=_resolve(spec.hands, mechanics, "the hand count"),
+            two_handed_size=_resolve(spec.two_handed_size, mechanics,
+                                     "the two-handed size"),
+        )
+
     order = _resolve(binding["damage_order"], mechanics, "the damage order")
     order = tuple(order)
     known = {p.name for p in pools}
@@ -538,4 +803,5 @@ def bind(name=None, path=None) -> Ruleset:
             f"(it declares: {', '.join(sorted(known))}). Either the ruleset "
             "renamed a pool or the binding never had it."
         )
-    return Ruleset(mechanics, values, sources, pools, order, attributes)
+    return Ruleset(mechanics, values, sources, pools, order, attributes,
+                   character)

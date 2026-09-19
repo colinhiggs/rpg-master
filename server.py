@@ -192,6 +192,79 @@ async def chat(sid, text):
     await broadcast_state()
 
 
+# ---------------------------------------------------------------------
+# Characters. The DM may write up and edit anybody; a player may edit a
+# character their own token is playing. Nobody may delete somebody
+# else's, and only the DM may point a token at a sheet — that is a
+# decision about whose character is in the fight.
+# ---------------------------------------------------------------------
+def _is_dm(sid):
+    player = data.get_player(sid)
+    return bool(player) and player["role"] == "dm"
+
+
+def _may_edit_character(sid, char_id):
+    if _is_dm(sid):
+        return True
+    player = data.get_player(sid)
+    if not player:
+        return False
+    token = data.get_token(player.get("tokenId"))
+    return bool(token) and token.get("characterId") == char_id
+
+
+@sio.event
+async def createCharacter(sid, payload):
+    payload = payload or {}
+    player = data.get_player(sid)
+    if not player:
+        return
+    char = await data.create_character(payload.get("name"),
+                                       payload.get("attributes"),
+                                       payload.get("equipment"))
+    if char is None:
+        # No character rules in this ruleset — say so rather than
+        # leaving the client waiting for a sheet that is not coming.
+        await sio.emit("characterRefused", {
+            "reason": f"the '{data.RULES.name}' ruleset has no character "
+                      "creation this server knows about",
+        }, to=sid)
+        return
+    # A player writing themselves up gets their own token pointed at it.
+    if not _is_dm(sid) and player.get("tokenId"):
+        await data.assign_character(player["tokenId"], char["id"])
+    await sio.emit("characterCreated", {"id": char["id"]}, to=sid)
+    await broadcast_state()
+
+
+@sio.event
+async def updateCharacter(sid, payload):
+    payload = payload or {}
+    char_id = payload.get("id")
+    if not _may_edit_character(sid, char_id):
+        return
+    await data.update_character(char_id, payload.get("changes") or {})
+    await broadcast_state()
+
+
+@sio.event
+async def deleteCharacter(sid, payload):
+    payload = payload or {}
+    if not _is_dm(sid):
+        return
+    await data.delete_character(payload.get("id"))
+    await broadcast_state()
+
+
+@sio.event
+async def assignCharacter(sid, payload):
+    payload = payload or {}
+    if not _is_dm(sid):
+        return
+    await data.assign_character(payload.get("tokenId"), payload.get("characterId"))
+    await broadcast_state()
+
+
 @sio.event
 async def disconnect(sid):
     player = await data.remove_player(sid)

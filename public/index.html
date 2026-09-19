@@ -62,6 +62,51 @@
   #spawnForm input, #spawnForm select { padding: 6px; border-radius: 6px; border: 1px solid #333; background: #0e0f13; color: #eee; }
   #hint { position: absolute; bottom: 10px; left: 10px; font-size: 12px; color: #888; }
   #roleTag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #333; margin-left: 6px; }
+
+  /* Characters. Three views of one record, at three sizes:
+     .sheet-brief  a line, for a popup or a bar
+     #charSide     a panel, for the sidebar
+     #charScreen   the whole thing, for writing one up and reading it   */
+  .sheet-brief { font-size: 11px; color: #999; display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
+  .sheet-brief .nm { color: #eee; font-weight: 600; font-size: 12px; }
+  .sheet-brief .bit { background: #23252f; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+  #charSide { margin-top: 10px; border-top: 1px solid #2a2c36; padding-top: 8px; }
+  #charSide .gear { font-size: 11px; color: #999; margin-top: 6px; line-height: 1.6; }
+  #charSide .gear b { color: #777; font-weight: 500; text-transform: uppercase; font-size: 10px; margin-right: 4px; }
+  .warn-list { margin: 6px 0 0; padding: 0; list-style: none; font-size: 11px; }
+  .warn-list li { padding: 3px 6px; border-radius: 4px; margin-top: 3px; }
+  .warn-list li.warn { background: rgba(247,95,79,.12); color: #f7a49a; }
+  .warn-list li.note { background: rgba(247,211,79,.10); color: #d8c48a; }
+  #charScreen { position: fixed; inset: 0; background: #0e0f13; z-index: 30; display: none; overflow-y: auto; }
+  #charScreen.open { display: block; }
+  #charScreen .wrap { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+  #charScreen h1 { font-size: 18px; margin: 0 0 4px; }
+  #charScreen .sub { color: #888; font-size: 12px; margin: 0 0 20px; }
+  #charScreen .cols { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  #charScreen .col { flex: 1; min-width: 260px; }
+  #charScreen h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #888; margin: 18px 0 8px; }
+  #charScreen input[type=text], #charScreen textarea, #charScreen select { width: 100%; box-sizing: border-box; padding: 7px; border-radius: 6px; border: 1px solid #333; background: #14161c; color: #eee; font: inherit; }
+  #charScreen textarea { min-height: 70px; resize: vertical; }
+  .attr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+  .attr-grid label { font-size: 10px; text-transform: uppercase; color: #888; display: flex; flex-direction: column; gap: 3px; }
+  .budget { font-size: 11px; color: #888; margin-top: 6px; }
+  .budget b { color: #eee; font-weight: 600; }
+  .budget.over b { color: #f75f4f; }
+  .slot { margin-bottom: 10px; }
+  .slot > b { display: block; font-size: 10px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+  .slot .held { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; }
+  .held .it { font-size: 11px; background: #23252f; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
+  .held .it:hover { background: #3a2c2c; color: #f7a49a; }
+  .held .none { font-size: 11px; color: #555; font-style: italic; }
+  .char-list { display: flex; flex-direction: column; gap: 4px; }
+  .char-list button { text-align: left; padding: 7px 9px; border-radius: 6px; border: 1px solid #2a2c36; background: #14161c; color: #ccc; cursor: pointer; font: inherit; font-size: 12px; }
+  .char-list button.active { border-color: #4f8ef7; color: #fff; }
+  .btn { padding: 7px 12px; border-radius: 6px; border: 1px solid #333; background: #23252f; color: #eee; cursor: pointer; font: inherit; font-size: 12px; }
+  .btn:hover { background: #2c2f3b; }
+  .btn.primary { background: #4f8ef7; border-color: #4f8ef7; color: #fff; font-weight: 600; }
+  .btn.danger:hover { background: #3a2c2c; color: #f7a49a; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  #charBtn { margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -80,6 +125,26 @@
   </div>
 </div>
 
+<div id="charScreen">
+  <div class="wrap">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
+      <div>
+        <h1>Characters</h1>
+        <p class="sub" id="charScreenSub"></p>
+      </div>
+      <button class="btn" id="charCloseBtn">Back to the table</button>
+    </div>
+    <div class="cols">
+      <div class="col" style="max-width:220px;">
+        <h2 style="margin-top:0;">Written up</h2>
+        <div class="char-list" id="charList"></div>
+        <div class="btn-row"><button class="btn primary" id="charNewBtn">New character</button></div>
+      </div>
+      <div class="col" style="flex:2; min-width:320px;" id="charEditor"></div>
+    </div>
+  </div>
+</div>
+
 <div id="canvas-wrap"></div>
 
 <div id="hud">
@@ -95,6 +160,8 @@
     <div>
       <h2>Party <span id="roleTag"></span></h2>
       <div id="playerList"></div>
+      <button class="btn" id="charBtn">Characters</button>
+      <div id="charSide"></div>
     </div>
 
     <div id="dmSpawnBlock" style="display:none;">
@@ -470,6 +537,8 @@ socket.on("state", (state) => {
   renderTurnList(state);
   renderPlayerList(state);
   renderChat(state);
+  renderCharSide(state);
+  renderCharScreen(state, false);
 });
 
 // The pools a creature has are the RULESET's, not this file's. The
@@ -519,6 +588,13 @@ function renderTurnList(state) {
 
     const name = document.createElement("span");
     name.textContent = tok.name;
+    const sheet = tok.characterId
+               && ((state.characters || {})[tok.characterId]);
+    // Only worth saying twice when they differ — a token called Ashri
+    // playing a sheet called Ashri does not need both.
+    if (sheet && sheet.name !== tok.name) {
+      name.textContent = `${tok.name} · ${sheet.name}`;
+    }
     if (mine(tok)) {
       name.style.cursor = "pointer";
       name.title = "Click to select, and to apply damage through the "
@@ -576,6 +652,11 @@ function renderTurnList(state) {
       }
       pools.appendChild(chip);
     });
+    if (sheet) {
+      // The abbreviated view, as a hover. Same renderer the sidebar
+      // uses, flattened to text because a title attribute is text.
+      row.title = briefText(state, sheet);
+    }
     row.appendChild(pools);
 
     // Attributes are hidden until asked for: six of them on every row
@@ -727,6 +808,296 @@ document.getElementById("spawnConfirm").onclick = () => {
   });
   document.getElementById("spawnForm").classList.remove("open");
 };
+
+// ---------------------------------------------------------------------
+// Characters — three views of one record.
+//
+//   sheetBrief()       one line, for a popup or a bar
+//   renderCharSide()   a panel, for the sidebar
+//   renderCharScreen() the whole sheet, for writing one up and reading it
+//
+// None of them knows what an attribute or a pool means: the names, the
+// labels, the budgets and the item catalogue all arrive in
+// state.ruleset, so a game with different ones renders through the same
+// code.
+// ---------------------------------------------------------------------
+let selectedCharId = null;
+
+function charRules(state) {
+  return (state && state.ruleset && state.ruleset.character) || null;
+}
+
+function charactersOf(state) {
+  return (state && state.characters) || {};
+}
+
+function myCharacter(state) {
+  const tok = state.tokens && state.tokens[myTokenId];
+  if (tok && tok.characterId) return charactersOf(state)[tok.characterId];
+  return null;
+}
+
+// --- abbreviated: a line ---------------------------------------------
+function sheetBrief(state, char) {
+  const specs = poolSpecs(state);
+  const bits = specs.map((sp) => {
+    const b = (char.pools || {})[sp.name];
+    return b ? `<span class="bit">${sp.label} ${b.current}/${b.max}</span>` : "";
+  }).join("");
+  const wielded = ((char.equipment || {}).wielded || [])
+    .map((id) => itemLabel(state, id)).join(", ");
+  return `<span class="nm">${char.name}</span>${bits}`
+       + (wielded ? `<span class="bit">${wielded}</span>` : "");
+}
+
+function briefText(state, char) {
+  const pools = poolSpecs(state).map((sp) => {
+    const b = (char.pools || {})[sp.name];
+    return b ? `${sp.label} ${b.current}/${b.max}` : null;
+  }).filter(Boolean).join("  ");
+  const gear = ["wielded", "worn"].map((slot) => {
+    const held = ((char.equipment || {})[slot] || [])
+      .map((id) => itemLabel(state, id)).join(", ");
+    return held ? `${slot}: ${held}` : null;
+  }).filter(Boolean).join("\n");
+  const warn = (char.warnings || []).map((w) => "! " + w.text).join("\n");
+  return [char.name, pools, gear, warn].filter(Boolean).join("\n");
+}
+
+function itemLabel(state, id) {
+  const rules = charRules(state);
+  const item = rules && rules.items[id];
+  return item ? item.label : id;
+}
+
+// --- middle: a sidebar panel -----------------------------------------
+function renderCharSide(state) {
+  const el = document.getElementById("charSide");
+  const char = myCharacter(state)
+            || (selectedTokenId && charactersOf(state)[
+                  (state.tokens[selectedTokenId] || {}).characterId]);
+  if (!charRules(state) || !char) { el.innerHTML = ""; return; }
+  const slots = ["wielded", "worn", "carried"].map((slot) => {
+    const held = ((char.equipment || {})[slot] || [])
+      .map((id) => itemLabel(state, id)).join(", ");
+    return `<div><b>${slot}</b>${held || "—"}</div>`;
+  }).join("");
+  const totals = char.totals || {};
+  el.innerHTML = `<div class="sheet-brief">${sheetBrief(state, char)}</div>`
+    + `<div class="gear">${slots}`
+    + `<div><b>purse</b>${totals.goldSpent || 0} of ${charRules(state).purse} gp`
+    + ` · <b>hands</b>${totals.handsUsed || 0} of ${charRules(state).hands}</div></div>`
+    + warningList(char);
+}
+
+function warningList(char) {
+  const ws = char.warnings || [];
+  if (!ws.length) return "";
+  return `<ul class="warn-list">`
+    + ws.map((w) => `<li class="${w.level}">${w.text}</li>`).join("")
+    + `</ul>`;
+}
+
+// --- detailed: the whole sheet ---------------------------------------
+function renderCharScreen(state, force) {
+  const screen = document.getElementById("charScreen");
+  if (!screen.classList.contains("open")) return;
+  const rules = charRules(state);
+  document.getElementById("charScreenSub").textContent = rules
+    ? `${state.ruleset.name} ${state.ruleset.version || ""} — `
+      + `${rules.attributeBudget} attribute points, `
+      + `${rules.purse} gold, ${rules.hands} hands`
+    : `the ${state.ruleset ? state.ruleset.name : "current"} ruleset has no `
+      + `character creation this server knows about`;
+
+  const chars = charactersOf(state);
+  const list = document.getElementById("charList");
+  list.innerHTML = "";
+  Object.values(chars).forEach((c) => {
+    const b = document.createElement("button");
+    b.textContent = c.name;
+    if (c.id === selectedCharId) b.className = "active";
+    b.onclick = () => { selectedCharId = c.id; renderCharScreen(latestState, true); };
+    list.appendChild(b);
+  });
+  document.getElementById("charNewBtn").disabled = !rules;
+
+  const editor = document.getElementById("charEditor");
+  // Do not rebuild under the cursor: a broadcast arrives on every
+  // keystroke somebody else makes, and rebuilding would take the field
+  // away mid-word.
+  if (!force && editor.contains(document.activeElement)) return;
+  const char = chars[selectedCharId];
+  if (!char) {
+    editor.innerHTML = `<p class="sub">`
+      + (rules ? "Pick a character, or write a new one up."
+               : "Nothing to show.") + `</p>`;
+    return;
+  }
+  editor.innerHTML = charForm(state, char, rules);
+  wireCharForm(state, char, rules);
+}
+
+function charForm(state, char, rules) {
+  const specs = poolSpecs(state);
+  const attrNames = (state.ruleset && state.ruleset.attributes) || [];
+  const totals = char.totals || {};
+
+  const attrs = attrNames.map((a) => `<label>${a.slice(0, 3)}
+      <input type="text" data-attr="${a}" value="${(char.attributes || {})[a] || 0}" /></label>`).join("");
+  const overAttrs = rules && totals.attributesSpent > rules.attributeBudget;
+  const overGold = rules && totals.goldSpent > rules.purse;
+
+  const pools = specs.map((sp) => {
+    const b = (char.pools || {})[sp.name] || { current: 0, max: 0 };
+    return `<label>${sp.label}
+      <input type="text" data-pool="${sp.name}" value="${b.current}/${b.max}"
+             ${sp.derivesFrom ? 'title="follows ' + sp.derivesFrom + '"' : ""} /></label>`;
+  }).join("");
+
+  const options = rules ? Object.values(rules.items)
+    .sort((a, b) => (a.catalogue + a.label).localeCompare(b.catalogue + b.label))
+    .map((i) => `<option value="${i.id}">${i.label}`
+                + (i.cost !== null && i.cost !== undefined ? ` — ${i.cost} gp` : "")
+                + `</option>`).join("") : "";
+
+  const slots = ["wielded", "worn", "carried"].map((slot) => {
+    const held = ((char.equipment || {})[slot] || []);
+    const chips = held.length
+      ? held.map((id, n) => `<span class="it" data-drop="${slot}" data-n="${n}"
+            title="click to take it off">${itemLabel(state, id)} ✕</span>`).join("")
+      : `<span class="none">nothing</span>`;
+    return `<div class="slot"><b>${slot}</b>
+      <div class="held">${chips}</div>
+      <div style="display:flex; gap:6px;">
+        <select data-add="${slot}"><option value="">add…</option>${options}</select>
+      </div></div>`;
+  }).join("");
+
+  return `
+    <h2 style="margin-top:0;">Name</h2>
+    <input type="text" data-field="name" value="${char.name}" />
+
+    <h2>Attributes</h2>
+    <div class="attr-grid">${attrs}</div>
+    <div class="budget${overAttrs ? " over" : ""}">
+      <b>${totals.attributesSpent || 0}</b> of ${rules ? rules.attributeBudget : "?"} points spread
+    </div>
+
+    <h2>Pools</h2>
+    <div class="attr-grid">${pools}</div>
+    <p class="sub" style="margin:6px 0 0;">A pool that follows an attribute
+      shows the figure the book computes. Type a maximum to override it;
+      clear the maximum to hand it back.</p>
+
+    <h2>Equipment</h2>
+    ${slots}
+    <div class="budget${overGold ? " over" : ""}">
+      <b>${totals.goldSpent || 0}</b> of ${rules ? rules.purse : "?"} gold
+      · <b>${totals.handsUsed || 0}</b> of ${rules ? rules.hands : "?"} hands
+    </div>
+
+    <h2>Notes</h2>
+    <textarea data-field="notes">${char.notes || ""}</textarea>
+
+    ${warningList(char)}
+    <div class="btn-row">
+      ${myRole === "dm" ? `<button class="btn" id="charAssignBtn">Put on my token</button>` : ""}
+      ${myRole === "dm" ? `<button class="btn danger" id="charDeleteBtn">Delete</button>` : ""}
+    </div>`;
+}
+
+function wireCharForm(state, char, rules) {
+  const editor = document.getElementById("charEditor");
+  const send = (changes) =>
+    socket.emit("updateCharacter", { id: char.id, changes });
+
+  editor.querySelectorAll("[data-field]").forEach((el) => {
+    el.onchange = () => send({ [el.dataset.field]: el.value });
+  });
+  editor.querySelectorAll("[data-attr]").forEach((el) => {
+    el.onchange = () => {
+      const v = parseInt(el.value, 10);
+      if (!isNaN(v)) send({ attributes: { [el.dataset.attr]: v } });
+    };
+  });
+  // Pools are the live numbers, so they go through the token events
+  // that already exist rather than through the sheet: one code path for
+  // "this creature took a hit", whether it was hit on the map or edited
+  // here.
+  editor.querySelectorAll("[data-pool]").forEach((el) => {
+    el.onchange = () => {
+      const tid = tokenFor(state, char.id);
+      if (!tid) { renderCharScreen(latestState, true); return; }
+      const [cur, max] = el.value.split("/").map((x) => x.trim());
+      const pool = el.dataset.pool;
+      if (max !== undefined) {
+        socket.emit("setPoolMax",
+          { tokenId: tid, pool, value: max === "" ? null : parseInt(max, 10) });
+      }
+      if (cur !== "" && !isNaN(parseInt(cur, 10))) {
+        socket.emit("setPool", { tokenId: tid, pool, value: parseInt(cur, 10) });
+      }
+    };
+  });
+  editor.querySelectorAll("[data-add]").forEach((sel) => {
+    sel.onchange = () => {
+      if (!sel.value) return;
+      const slot = sel.dataset.add;
+      const held = ((char.equipment || {})[slot] || []).concat([sel.value]);
+      send({ equipment: { [slot]: held } });
+      sel.value = "";
+    };
+  });
+  editor.querySelectorAll("[data-drop]").forEach((chip) => {
+    chip.onclick = () => {
+      const slot = chip.dataset.drop;
+      const held = ((char.equipment || {})[slot] || []).slice();
+      held.splice(parseInt(chip.dataset.n, 10), 1);
+      send({ equipment: { [slot]: held } });
+    };
+  });
+  const assign = document.getElementById("charAssignBtn");
+  if (assign) assign.onclick = () => {
+    const tid = selectedTokenId || myTokenId;
+    if (tid) socket.emit("assignCharacter", { tokenId: tid, characterId: char.id });
+  };
+  const del = document.getElementById("charDeleteBtn");
+  if (del) del.onclick = () => {
+    if (confirm(`Delete ${char.name}'s sheet? The token keeps its numbers.`)) {
+      socket.emit("deleteCharacter", { id: char.id });
+      selectedCharId = null;
+    }
+  };
+}
+
+function tokenFor(state, charId) {
+  const hit = Object.values(state.tokens || {})
+                    .find((t) => t.characterId === charId);
+  return hit ? hit.id : null;
+}
+
+document.getElementById("charBtn").onclick = () => {
+  document.getElementById("charScreen").classList.add("open");
+  if (!selectedCharId) {
+    const mine = myCharacter(latestState);
+    selectedCharId = mine ? mine.id
+                          : Object.keys(charactersOf(latestState))[0] || null;
+  }
+  renderCharScreen(latestState, true);
+};
+document.getElementById("charCloseBtn").onclick = () =>
+  document.getElementById("charScreen").classList.remove("open");
+document.getElementById("charNewBtn").onclick = () =>
+  socket.emit("createCharacter", { name: "New character" });
+
+socket.on("characterCreated", (d) => {
+  selectedCharId = d.id;
+  renderCharScreen(latestState, true);
+});
+socket.on("characterRefused", (d) => {
+  alert("No character sheet: " + d.reason);
+});
 </script>
 </body>
 </html>

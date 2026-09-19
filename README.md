@@ -48,7 +48,8 @@ separate and when not, and step-by-step procedures for the common jobs.
 - **`public/index.html`** — the 3D client. Loads three character
   models (`public/assets/models/*.glb`) once at startup, clones them
   per token, and animates them procedurally — see "3D models and
-  animation" below.
+  animation" below. Also holds the character screen and the two
+  smaller character views; see "Characters".
 - **`public/assets/`** — the placeholder model/texture pack (hero,
   goblin, ogre, plus a ground texture). See its own README under
   `public/assets/` for how these were generated and how to swap in a
@@ -166,6 +167,74 @@ in `rules/` and the one this server has in fact always been
 implementing). The lookup is the toolset's, so an installed ruleset in
 `rules/<name>/` wins over one being authored outside, and
 `$RULESET_PATH` adds a third place to look.
+
+## Characters
+
+A **character** is stored apart from any token, because it outlives the
+fight it was on the map for: one player may have several, and a
+character nobody is currently playing still exists. `data.py` keeps
+them in `_state["characters"]`, persisted with everything else.
+
+**A token that names a character has no pools or attributes of its
+own.** `data._sheet()` sends every read and write to the character
+instead, so a wound taken in this fight is a wound on the sheet next
+session, and there is one set of current values rather than two that
+drift. Unlink it and the token keeps the numbers it was playing with —
+the sheet is gone, the creature is still standing there.
+
+A sheet holds its attributes, its pools as current-and-maximum (derived
+from the attributes exactly as a token's are), its equipment in three
+slots — wielded, worn, carried — and free-form skills, disciplines,
+powers and notes.
+
+### What is checked, and what is not
+
+`ruleset.py`'s `Character` block declares the budgets the book states
+and the catalogues it carries: the attribute spread and its floor and
+ceiling, the starting purse, the hand count, and the documents whose
+dict-valued mechanics are items. An item is a mechanic whose value is a
+block — `weapons.dagger` is one, `weapons.finesse_size` is not — which
+is a distinction in the toolset's shape rather than in any game, so
+only the list of catalogues had to be named.
+
+From that the server counts three things and **remarks** on them:
+
+| | against |
+|---|---|
+| attribute points spread | `character-creation.attribute_points` |
+| gold of equipment | `character-creation.starting_gold` |
+| hands of wielded gear | `free-hands.hands_total` |
+
+**Remarks, never refusals.** A table that has applied priorities
+legitimately has more than the standard attribute points — the rules
+say so — and a DM may hand a player anything they like. A virtual
+tabletop that refused to store a character its DM had approved would be
+wrong about what it is for.
+
+Skills, disciplines and powers are stored and shown and checked by
+nobody. They are real systems with budgets of their own, and a server
+that half-enforced them would be worse than one that plainly does not.
+
+### Three views
+
+One record, three sizes, none of which knows what an attribute or a
+pool means — the names, labels, budgets and catalogue all arrive in
+`state.ruleset`:
+
+- **Abbreviated** — `sheetBrief()` / `briefText()`. A line: name, every
+  pool as current-over-maximum, what is in hand. Used as the hover on
+  an initiative row.
+- **Middle** — `renderCharSide()`. A sidebar panel: the line above, the
+  three equipment slots, purse and hands against their budgets, and any
+  remarks.
+- **Detailed** — `renderCharScreen()`. Its own screen, and the same
+  form that writes a character up in the first place. A pool that
+  follows an attribute shows the figure the book computes; type a
+  maximum to override it, clear the maximum to hand it back.
+
+Pool edits on the character screen go out as the ordinary token pool
+events rather than as a sheet update, so "this creature took a hit" has
+one code path whether it was hit on the map or edited on the sheet.
 
 ## 3D models and animation
 
