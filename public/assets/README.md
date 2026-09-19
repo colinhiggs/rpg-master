@@ -14,7 +14,7 @@ humanoid silhouette — "greybox" quality, for validating the pipeline
 ## What's here
 
 - `models/hero.glb` — the player character shape (everyone gets this
-  one for now — see the main README's "what I'd extend first")
+  one for now — see the client section of `../../TODO.md`)
 - `models/goblin.glb`, `models/ogre.glb` — the two monster shapes the
   DM can currently spawn
 - `models/crate.glb`, `models/rock.glb` — simple props (not currently

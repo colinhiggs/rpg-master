@@ -167,32 +167,12 @@ exactly. The one structural addition beyond the port is the
 
 ## What I'd extend first
 
-1. **Your rules engine.** Right now "the game" is just position + HP +
-   a generic dice roller. The real design work is turning your rules
-   into `data.py` functions the same way `roll_dice`/`set_hp` are —
-   validated in `server.py`, applied and persisted in `data.py`.
-2. **Fog of war / DM-only info.** Everyone sees everything right now.
-   Give tokens a `visibleTo` set or a vision-radius calc, and only
-   send DM-only layers to the DM's `sid` via `sio.emit(..., to=sid)`
-   instead of a full broadcast.
-3. **Matching a reconnecting player to their old token by name**, so a
-   dropped player can rejoin mid-session and get their character back
-   instead of a fresh one — mentioned above, not yet built.
-4. **Multiple rooms.** One global game right now. This is also the
-   natural trigger for the full relational migration described above,
-   since "which room does this row belong to" is exactly the kind of
-   query a normalized schema handles better than a JSON blob.
-5. **Letting players pick their own look**, and giving the DM more than
-   three monster shapes. Right now every player is forced into `"hero"`
-   and the DM chooses from exactly `goblin`/`ogre`/`hero`
-   (`data.MODEL_KINDS`). Adding a shape means: generate or source
-   another `.glb` (see `public/assets/README.md`), add it to
-   `MODEL_KINDS`, add it to `MODEL_URLS` in `index.html`, and add it to
-   the spawn dropdown (or a character-select step on join, for
-   players).
-6. **Auth** — a room password or per-player token before exposing this
-   beyond people you trust; anyone with the URL can currently join as
-   anyone, including as DM.
+The roadmap moved to [TODO.md](TODO.md), which is a board rather than a
+document: an entry there can be picked up, worked on and finished, and
+finishing it moves it to [DONE.md](DONE.md). Keeping the list here as
+well would mean two copies to move an entry in, and one of them would
+be wrong within a week. What stays in this file is what the server *is*
+— the sections above, and the rough edges below.
 
 ## Known rough edges (prototype-level, on purpose)
 
@@ -206,4 +186,4 @@ exactly. The one structural addition beyond the port is the
   `public/assets/README.md`) and only three shapes exist.
 - A dropped player's token stays on the board but isn't reclaimed on
   rejoin; they'll get a brand-new token unless you extend `join` to
-  match by name (see "What I'd extend first").
+  match by name (see [TODO.md](TODO.md)).
