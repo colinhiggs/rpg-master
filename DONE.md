@@ -29,7 +29,48 @@ describe how the server works now rather than how it got there.
 
 ## The rules engine
 
-*Nothing yet.*
+- **The server reads its game numbers from the ruleset, and the reader
+  is tested against one.** `data.py` used to hardcode a grid size, a
+  starting hit point total, a dice regex and two roller limits. All of
+  them now come from a compiled `build/mechanics.json` at import, and
+  the server refuses to start rather than defaulting.
+
+  **What was actually wrong.** A reader for this existed from the
+  initial commit — `tools/rules_runtime.py`, with ten accessors like
+  `starting_hp()` and `grid_size()`. Three documents described it as
+  done: `notes.md` scored the values rung "Done", this repository's
+  README called it "written and tested", and `sim/model.py`'s header
+  cited it as the pattern it followed. It resolved 10 of 10 against
+  `rules/demo` and 0 of 10 against `ico`. Nothing imported it and no
+  test named it.
+
+  The reason it rotted is the part worth keeping. Naming
+  `damage-and-healing.starting_hp` is knowing a particular game, and
+  `SHARING.md` forbids that inside `rules-toolset/`. The only ruleset
+  the file could legally name keys from was the toolset's own fixture —
+  and the fixture had been written to describe `data.py`'s constants
+  (`movement.grid_size` is 14, `damage-and-healing.starting_hp` is 20,
+  `dice-rolls.notation_pattern` is byte-identical to the old `DICE_RE`).
+  So the loop closed on itself and proved nothing, and no
+  game-agnostic test could have caught it, because there was nothing
+  game-agnostic left to assert.
+
+  **What replaced it.** The generic half is `rulesc/runtime.py` —
+  finding a built ruleset, reading its `_version` stamp, and failing
+  with the keys it did find. It names no rule and no mechanic. The
+  half that names them is `ruleset.py` in this repository, which is
+  allowed to know which game it is running, and which splits a need the
+  book must answer from one the table may answer itself. A
+  table-owned answer is printed at startup rather than assumed.
+
+  **What it bought beyond the wiring.** Running against `ico` produces
+  the rung-1 list rather than an estimate of it: two needs unanswered,
+  `starting_hp` and `healing_caps_at_max`, both the same fact about one
+  hit point pool versus two. And `test_server.py` exists — 38 tests,
+  the first the server has ever had — of which the load-bearing one
+  asserts that every binding names mechanics the ruleset still has. One
+  test of that kind would have caught the original the day the ruleset
+  moved.
 
 ## State and persistence
 

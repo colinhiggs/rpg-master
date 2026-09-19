@@ -113,7 +113,7 @@ async def rollDice(sid, notation):
     player = data.get_player(sid)
     if not player:
         return
-    result = data.roll_dice(str(notation or "d20"))
+    result = data.roll_dice(str(notation or data.RULES.default_roll))
     await data.append_roll_log(player["name"], notation, result)
     await broadcast_state()
 
@@ -136,6 +136,10 @@ async def disconnect(sid):
 
 @fastapi_app.on_event("startup")
 async def on_startup():
+    # Print where every game number came from. A value the book does
+    # not state and the table supplied instead should be visible in the
+    # log rather than assumed — see ruleset.py.
+    print(data.RULES.provenance(), flush=True)
     await data.load()
 
 

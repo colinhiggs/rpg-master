@@ -209,6 +209,19 @@ two different answers to one question.
   toolset's job, because the thing that consumes the record is the built
   output.
 
+- **Reading a built ruleset back had no home here.** A consumer that
+  *plays* a ruleset rather than printing it needs to find it, read its
+  stamp and fail usefully on a missing key — the same job whatever the
+  game is. `rulesc.runtime` does that and names no rule and no mechanic.
+  The layer that does name them was the instructive part: it used to sit
+  in `tools/`, where the only ruleset it could legally name keys from
+  was `demo`, and `demo` had been written to describe the consumer's own
+  constants. Every accessor resolved, against a fixture derived from the
+  thing it was checking, and none resolved against a real ruleset. A
+  rule this repository states was being kept in the letter and broken in
+  the substance, and the tell was that the tests could not have caught
+  it — there was nothing game-agnostic left to assert.
+
 `rules-toolset/CORPUS.md` is the reference for all of it, and the API a
 second compiler calls.
 

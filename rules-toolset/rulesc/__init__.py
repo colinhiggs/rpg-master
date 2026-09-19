@@ -36,6 +36,7 @@ from .lookup import (
     INSTALLED_RULESETS, RULESET_PATH_ENV, RULESET_SEARCH_PATH, TOOLSET_ROOT,
     WORKING_RULESETS, find_ruleset, read_version, resolve_ruleset_dir, search_path,
 )
+from .runtime import Mechanics, RulesNotBuilt, load_ruleset
 from .targets import (
     BOOK_CSS, BOOK_ROOT,
     build_book, build_data, build_snippets, build_target, check_target_links,
@@ -55,6 +56,8 @@ __all__ = [
     "INSTALLED_RULESETS", "RULESET_PATH_ENV", "RULESET_SEARCH_PATH", "TOOLSET_ROOT",
     "WORKING_RULESETS", "find_ruleset", "read_version", "resolve_ruleset_dir",
     "search_path",
+    # reading a built ruleset back, for something that plays it
+    "Mechanics", "RulesNotBuilt", "load_ruleset",
     # writing output
     "BOOK_CSS", "BOOK_ROOT", "build_book", "build_data", "build_snippets",
     "build_target", "check_target_links", "related_for", "rendered_ids",

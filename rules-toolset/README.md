@@ -274,37 +274,41 @@ before anything else runs.
 
 ## Wiring the game server to it
 
-`tools/rules_runtime.py` is the server-side reader. Copy it next to
-`server.py`, and point it at the **installed** ruleset's
-`build/mechanics.json` and `build/snippets.json` — i.e.
-`rules/<name>/build/*.json` relative to the server, filled by a build
-step rather than by hand. Point it at the ruleset the game is actually
-running, not at `demo`: `demo` exists to develop and test the toolset
-itself.
+`rulesc.runtime` is the server-side reader, and it is part of the
+package rather than a file to copy:
 
 ```python
-import rules_runtime as R
-R.load_mechanics()          # at startup; raises loudly if not built
+from rulesc.runtime import load_ruleset
 
-R.starting_hp()             # 20 — from damage-and-healing
-R.grid_size()               # 14 — from movement
-R.dice_notation_pattern()   # the regex, from dice-rolls
-R.mech("attacks", "base_defence")   # anything else
+rules = load_ruleset("ico")          # found the same way build.py finds it
+rules.version                        # '2.6.1', or None if unversioned
+rules.mech("core-resolution", "standard_die")    # '1d20'
+rules.has("movement", "grid_size")               # False — ico has no such thing
+rules.snippet("armour")                          # compiled prose, or None
 ```
 
-The point is that `data.py` should stop carrying its own copies. It
-currently hardcodes `"hp": 20`, `GRID_SIZE = 14`, and a dice regex —
-each of those is a second source of truth that can silently disagree
-with the printed rules. Replacing them with `R.starting_hp()`,
-`R.grid_size()`, `R.dice_notation_pattern()` closes the loop, and
-`mech()` raises on a missing key rather than returning a default, so a
-typo fails at startup instead of producing a rules-violating game.
+`load_ruleset` uses the same two-place search as every other tool, so
+an **installed** ruleset at `rules/<name>/` wins over one being authored
+outside, and `$RULESET_PATH` adds a third place. A ruleset that is on
+disk but not built raises rather than returning defaults: there are no
+built-in values for a game number, by design.
 
-**I have not made that edit to `data.py` in the game project** — it
-touches the module you may still be actively changing, and it needs a
-decision from you first: whether the server reads `mechanics.json`
-directly from the rules repo, or whether a build step copies it in.
-Both are fine; they differ in how you deploy.
+**What this module deliberately will not do is name a rule or a
+mechanic.** An accessor called `starting_hp()` has to say which document
+and which key it comes from, and that is knowing a particular game —
+which `SHARING.md` forbids here. The version of this that existed
+before got around the rule by naming keys from `demo`, and since `demo`
+was itself written to describe the server's constants, the loop closed
+on itself: every accessor resolved against the fixture, none against a
+real ruleset, and nothing ever noticed because nothing tested it
+against one.
+
+So the layer that names keys belongs to the consumer, which is allowed
+to know which game it is running. In this repository that is
+`../ruleset.py`, which declares what the server needs in its own
+vocabulary, maps each need onto a mechanic *per ruleset*, and
+distinguishes a need the book must answer from one the table may answer
+itself. See the game project's README for the shape of it.
 
 ## Serving snippets to the client
 
@@ -384,13 +388,14 @@ rpg-master/rules-toolset/   (generic, no game content — ships with the game)
     targets.py       the three output shapes
     lint.py          the drift and structure checks
     lookup.py        finding a ruleset by name, and reading its VERSION
+    runtime.py       reading a built ruleset back, for something that
+                     plays it rather than prints it
     errors.py        RuleError and IncludeCycleError
   tools/
     build.py         command line over rulesc: takes a corpus name or
                      path, writes whatever targets its profile declares
-    test_rules.py    182 tests on the pipeline's guarantees; takes an
+    test_rules.py    255 tests on the pipeline's guarantees; takes an
                      optional corpus name (defaults to 'demo')
-    rules_runtime.py server-side reader (copy into the game project)
   snippet-demo.html    working in-game context help demo, wired to the
                        demo ruleset specifically (see its own note)
   CORPUS.md            corpus profiles: kinds, audiences, targets,
