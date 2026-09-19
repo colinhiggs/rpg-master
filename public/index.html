@@ -30,7 +30,17 @@
   .token-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
   .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
   .token-row.current { background: rgba(79,142,247,.15); border-radius: 6px; padding: 4px 6px; }
-  .hp { margin-left: auto; color: #999; font-size: 12px; }
+  .pools { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+  .pool { color: #999; font-size: 11px; padding: 1px 5px; border-radius: 4px; background: #23252f; white-space: nowrap; }
+  .pool.editable { cursor: pointer; }
+  .pool.editable:hover { background: #2c2f3b; color: #ddd; }
+  .pool .lbl { color: #666; margin-right: 3px; }
+  .pool.spent { color: #f7a04f; }
+  .pool.down { color: #f75f4f; font-weight: 600; }
+  .pool.unset { color: #555; font-style: italic; }
+  #spawnPools { display: flex; gap: 6px; flex-wrap: wrap; }
+  #spawnPools label { font-size: 11px; color: #888; display: flex; flex-direction: column; gap: 2px; }
+  #spawnPools input { width: 64px; padding: 4px; border-radius: 4px; border: 1px solid #333; background: #0e0f13; color: #eee; }
   #nextTurnBtn, #spawnBtn, #rollBtn, #chatSendBtn { padding: 6px 10px; border-radius: 6px; border: 1px solid #333; background: #23252f; color: #eee; cursor: pointer; }
   #nextTurnBtn:hover, #spawnBtn:hover, #rollBtn:hover, #chatSendBtn:hover { background: #2c2f3b; }
   #chatlog { height: 160px; overflow-y: auto; font-size: 12px; line-height: 1.5; border-top: 1px solid #2a2c36; border-bottom: 1px solid #2a2c36; padding: 6px 0; margin: 6px 0; }
@@ -87,7 +97,7 @@
           <option value="ogre">Ogre (large)</option>
           <option value="hero">Hero-shaped ally</option>
         </select>
-        <input id="spawnHp" type="text" placeholder="HP (e.g. 12)" />
+        <div id="spawnPools"><!-- one box per pool the ruleset declares --></div>
         <input id="spawnColor" type="text" placeholder="Ring color (e.g. #999999)" value="#999999" />
         <button id="spawnConfirm">Spawn</button>
       </div>
@@ -390,7 +400,7 @@ function syncScene(state) {
     entry.ring.material.color.set(token.color);
     const isCurrentTurn = state.turnOrder[state.currentTurn] === token.id;
     entry.ring.material.opacity = isCurrentTurn ? 1 : 0.35;
-    entry.group.scale.setScalar(token.hp <= 0 ? 0.001 : 1); // "downed" tokens shrink away
+    entry.group.scale.setScalar(isDown(state, token) ? 0.001 : 1); // "downed" tokens shrink away
   }
   for (const id of Object.keys(tokenMeshes)) {
     if (!seen.has(id)) {
@@ -446,32 +456,121 @@ animate();
 socket.on("state", (state) => {
   latestState = state;
   syncScene(state);
+  renderSpawnPools(state);
   renderTurnList(state);
   renderPlayerList(state);
   renderChat(state);
 });
 
+// The pools a creature has are the RULESET's, not this file's. The
+// server sends their names, labels and thresholds with every state, so
+// a game with one hit point total and a game with four tracks render
+// through the same code and neither is special-cased here.
+function poolSpecs(state) {
+  return (state.ruleset && state.ruleset.pools) || [];
+}
+
+function vitalPool(state) {
+  return poolSpecs(state).find((p) => p.downAt !== null && p.downAt !== undefined);
+}
+
+function isDown(state, token) {
+  const vital = vitalPool(state);
+  if (!vital || !token.pools) return false;
+  const block = token.pools[vital.name];
+  return block ? block.current <= vital.downAt : false;
+}
+
 function renderTurnList(state) {
   const el = document.getElementById("turnList");
   el.innerHTML = "";
+  const specs = poolSpecs(state);
+  const mine = (tok) => myRole === "dm" || tok.ownerId === selfId;
+
   state.turnOrder.forEach((tid, i) => {
     const tok = state.tokens[tid];
     if (!tok) return;
     const row = document.createElement("div");
     row.className = "token-row" + (i === state.currentTurn ? " current" : "");
-    row.innerHTML = `<span class="swatch" style="background:${tok.color}"></span>${tok.name}<span class="hp">${tok.hp}/${tok.maxHp} HP</span>`;
-    if (myRole === "dm" || tok.ownerId === selfId) {
-      row.style.cursor = "pointer";
-      row.title = "Click to select / adjust HP";
-      row.onclick = () => {
+
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    swatch.style.background = tok.color;
+    row.appendChild(swatch);
+
+    const name = document.createElement("span");
+    name.textContent = tok.name;
+    if (mine(tok)) {
+      name.style.cursor = "pointer";
+      name.title = "Click to select, and to apply damage through the "
+                 + "ruleset's own order (a negative number heals)";
+      name.onclick = () => {
         if (myRole === "dm") selectedTokenId = tid;
-        const val = prompt(`Set HP for ${tok.name}`, tok.hp);
+        const val = prompt(`Damage ${tok.name} by how much? (negative heals)`, "1");
         if (val !== null && !isNaN(parseInt(val, 10))) {
-          socket.emit("setHp", { tokenId: tid, hp: parseInt(val, 10) });
+          socket.emit("damage", { tokenId: tid, amount: parseInt(val, 10) });
         }
       };
     }
+    row.appendChild(name);
+
+    const pools = document.createElement("span");
+    pools.className = "pools";
+    specs.forEach((spec) => {
+      const block = (tok.pools || {})[spec.name];
+      if (!block) return;
+      const chip = document.createElement("span");
+      let cls = "pool";
+      if (block.max === 0) cls += " unset";
+      else if (spec.downAt !== null && spec.downAt !== undefined
+               && block.current <= spec.downAt) cls += " down";
+      else if (block.current < block.max) cls += " spent";
+      if (mine(tok)) cls += " editable";
+      chip.className = cls;
+      chip.innerHTML = `<span class="lbl">${spec.label}</span>`
+                     + `${block.current}/${block.max}`;
+      if (mine(tok)) {
+        chip.title = `Click to set ${spec.label.toLowerCase()}; `
+                   + "shift-click to set its maximum";
+        chip.onclick = (e) => {
+          e.stopPropagation();
+          const max = e.shiftKey;
+          const val = prompt(
+            `Set ${spec.label}${max ? " maximum" : ""} for ${tok.name}`,
+            max ? block.max : block.current);
+          if (val !== null && !isNaN(parseInt(val, 10))) {
+            socket.emit(max ? "setPoolMax" : "setPool",
+                        { tokenId: tid, pool: spec.name, value: parseInt(val, 10) });
+          }
+        };
+      }
+      pools.appendChild(chip);
+    });
+    row.appendChild(pools);
     el.appendChild(row);
+  });
+}
+
+// The spawn form's boxes follow the ruleset too: one per pool, and a
+// pool the ruleset gives a starting value for is pre-filled with it.
+let spawnPoolsBuiltFor = null;
+function renderSpawnPools(state) {
+  const specs = poolSpecs(state);
+  const signature = specs.map((p) => `${p.name}:${p.starts}`).join(",");
+  if (signature === spawnPoolsBuiltFor) return;
+  spawnPoolsBuiltFor = signature;
+  const box = document.getElementById("spawnPools");
+  box.innerHTML = "";
+  specs.forEach((spec) => {
+    const label = document.createElement("label");
+    label.textContent = spec.label;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = `spawnPool_${spec.name}`;
+    input.value = spec.starts === null || spec.starts === undefined ? "" : spec.starts;
+    input.placeholder = "—";
+    label.appendChild(input);
+    box.appendChild(label);
   });
 }
 
@@ -527,10 +626,14 @@ document.getElementById("spawnBtn").onclick = () => {
 document.getElementById("spawnConfirm").onclick = () => {
   const name = document.getElementById("spawnName").value || "Monster";
   const kind = document.getElementById("spawnKind").value || "goblin";
-  const hp = document.getElementById("spawnHp").value || "10";
   const color = document.getElementById("spawnColor").value || "#999999";
+  const pools = {};
+  poolSpecs(latestState || {}).forEach((spec) => {
+    const input = document.getElementById(`spawnPool_${spec.name}`);
+    if (input && input.value.trim() !== "") pools[spec.name] = input.value.trim();
+  });
   socket.emit("spawnToken", {
-    name, hp, color, kind,
+    name, pools, color, kind,
     x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2),
   });
   document.getElementById("spawnForm").classList.remove("open");

@@ -72,6 +72,39 @@ describe how the server works now rather than how it got there.
   test of that kind would have caught the original the day the ruleset
   moved.
 
+- **A creature has the tracks its ruleset says it has.** A token used
+  to carry `hp` and `maxHp`. It carries a `pools` block now, one entry
+  per track the ruleset declares — one for `demo`, four for Ico
+  (mastery, core, stamina, spirit) — and `data.py` decides none of
+  them.
+
+  **Why one field could not be stretched.** Ico takes damage on two
+  tracks in a stated order, and pays for powers out of two more. No
+  reading of a single `hp` covers that, which is why the rung-0 binding
+  could not answer `starting_hp` for Ico at all and refused to start.
+  It binds now.
+
+  **Three things the ruleset turned out to say that the server had been
+  assuming.** The damage order is read from `hit-points.damage_order`,
+  so mastery absorbs a blow before core because Ico says so; stamina
+  and spirit are deliberately not in that order, being conditions
+  rather than damage tracks. Core has **no floor** — clamping hit
+  points at zero was a `demo` rule all along, and Ico's core runs past
+  zero toward death at negative constitution, so the threshold for
+  being out of the fight is carried separately from any clamp. And no
+  Ico pool states a starting maximum, because all four derive from a
+  character sheet the server does not hold, so the table types them in.
+
+  **Where the rung stops.** `apply_damage` walks a sequence the book
+  states; it computes nothing. That is the line: executing declared
+  data is rung 1, and deriving core hit points from constitution is
+  rung 2 and deliberately not here.
+
+  Verified end to end in the browser against Ico 2.6.1: a spawn form
+  that grows a box per pool, damage spilling mastery into core, core
+  going to −2 and the token greying out at death's door. 76 server
+  tests, up from 38.
+
 ## State and persistence
 
 *Nothing yet.*

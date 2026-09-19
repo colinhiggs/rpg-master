@@ -48,8 +48,14 @@ MODEL_KINDS = ("hero", "goblin", "ogre")
 # ---------------------------------------------------------------------
 _state = {
     "gridSize": RULES.grid_size,
+    # What game this is, for the client: the pools to draw, their
+    # labels, and which one takes a creature out of the fight. It is
+    # rebuilt from the binding on every start and never restored from
+    # the save, the same way `players` is not — a saved description of
+    # a ruleset you might since have changed is worse than none.
+    "ruleset": RULES.as_json(),
     "players": {},   # sid -> { id, name, role, tokenId }  — NOT persisted, see load()
-    "tokens": {},    # tokenId -> { id, name, x, y, color, hp, maxHp, ownerId, isNpc }
+    "tokens": {},    # tokenId -> { id, name, x, y, color, kind, pools, ownerId, isNpc }
     "turnOrder": [],
     "currentTurn": -1,
     "log": [],
@@ -61,6 +67,27 @@ def snapshot() -> dict:
     """The full state, exactly as broadcast to clients. Cheap: it's just
     the dict socket.io was already going to serialize to JSON."""
     return _state
+
+
+def _migrate_token(token: dict) -> dict:
+    """Bring a token saved before pools existed up to the current shape.
+
+    A token used to carry `hp` and `maxHp`. The old value goes into
+    whichever pool the ruleset says a creature goes down on, because
+    that is what a single hit point total was standing in for; every
+    other pool starts empty for the table to fill in. Switching ruleset
+    between runs makes the old numbers meaningless anyway, which is why
+    this is a courtesy rather than a migration worth versioning."""
+    if "pools" in token:
+        return token
+    old = token.pop("maxHp", None)
+    current = token.pop("hp", old)
+    vital = RULES.vital_pool
+    supplied = {vital.name: old} if vital is not None and old is not None else {}
+    token["pools"] = RULES.fresh_pools(supplied)
+    if vital is not None and current is not None and vital.name in token["pools"]:
+        token["pools"][vital.name]["current"] = int(current)
+    return token
 
 
 # ---------------------------------------------------------------------
@@ -95,7 +122,8 @@ async def load():
     if row:
         saved = json.loads(row[0])
         _state["gridSize"] = saved.get("gridSize", RULES.grid_size)
-        _state["tokens"] = saved.get("tokens", {})
+        _state["tokens"] = {tid: _migrate_token(t)
+                            for tid, t in saved.get("tokens", {}).items()}
         _state["turnOrder"] = saved.get("turnOrder", [])
         _state["currentTurn"] = saved.get("currentTurn", -1)
         _state["log"] = saved.get("log", [])
@@ -178,7 +206,7 @@ def roll_dice(notation: str):
 # auth/validation (is this sid allowed to do this?); this module's job
 # is applying the change once it's been allowed.
 # ---------------------------------------------------------------------
-async def add_player(sid: str, name: str, role: str):
+async def add_player(sid: str, name: str, role: str, pools=None):
     name = str(name or "Adventurer")[:24]
     role = "dm" if role == "dm" else "player"
 
@@ -193,8 +221,7 @@ async def add_player(sid: str, name: str, role: str):
             "y": _clamp_to_grid(_state["gridSize"] / 2 + (random.random() * 4 - 2)),
             "color": colors[len(_state["players"]) % len(colors)],
             "kind": "hero",
-            "hp": RULES.starting_hp,
-            "maxHp": RULES.starting_hp,
+            "pools": RULES.fresh_pools(pools),
             "ownerId": sid,
             "isNpc": False,
         }
@@ -225,12 +252,8 @@ async def move_token(token_id: str, x: float, y: float):
     return token
 
 
-async def spawn_token(name: str, color: str, hp, x, y, kind: str = "goblin"):
+async def spawn_token(name: str, color: str, pools, x, y, kind: str = "goblin"):
     token_id = _next_token_id_str()
-    try:
-        hp_val = int(hp) if hp is not None else 10
-    except (TypeError, ValueError):
-        hp_val = 10
     if kind not in MODEL_KINDS:
         kind = "goblin"
     token = {
@@ -240,8 +263,7 @@ async def spawn_token(name: str, color: str, hp, x, y, kind: str = "goblin"):
         "y": _clamp_to_grid(y if y is not None else _state["gridSize"] / 2),
         "color": color or "#999999",
         "kind": kind,
-        "hp": hp_val,
-        "maxHp": hp_val,
+        "pools": RULES.fresh_pools(pools),
         "ownerId": None,
         "isNpc": True,
     }
@@ -260,17 +282,99 @@ async def remove_token(token_id: str):
     await _save()
 
 
-async def set_hp(token_id: str, hp: int):
+async def set_pool(token_id: str, pool_name: str, value: int):
+    """Set one pool's current value. Whether it may exceed the maximum,
+    and what it clamps to from below, are the pool's own business — see
+    ruleset.py, where Ico's core hit points deliberately have no floor
+    because they run past zero to a limit this server cannot compute."""
     token = _state["tokens"].get(token_id)
-    if not token:
+    pool = RULES.pools_by_name.get(pool_name)
+    if not token or pool is None:
         return None
-    # Whether healing may overshoot is the ruleset's call, not this
-    # function's; min_hp likewise, which is 0 in demo and death's door
-    # in a ruleset that has one.
-    ceiling = token["maxHp"] if RULES.healing_caps_at_max else hp
-    token["hp"] = max(RULES.min_hp, min(ceiling, hp))
+    block = token["pools"].get(pool_name)
+    if block is None:
+        return None
+    block["current"] = pool.clamp(int(value), block["max"])
     await _save()
     return token
+
+
+async def set_pool_max(token_id: str, pool_name: str, value: int):
+    """Set one pool's maximum — the table filling in a character whose
+    numbers the ruleset cannot state. The current value follows it down
+    so a token cannot sit above a maximum it just lost."""
+    token = _state["tokens"].get(token_id)
+    pool = RULES.pools_by_name.get(pool_name)
+    if not token or pool is None:
+        return None
+    block = token["pools"].get(pool_name)
+    if block is None:
+        return None
+    block["max"] = max(0, int(value))
+    block["current"] = pool.clamp(block["current"], block["max"])
+    await _save()
+    return token
+
+
+async def apply_damage(token_id: str, amount: int):
+    """Take `amount` off the token, through the pools in the order the
+    RULESET declares — `hit-points.damage_order` in Ico, which is
+    mastery before core. The order is read rather than written here:
+    the server executes a sequence the book states, which is the whole
+    difference between this and implementing a damage rule."""
+    token = _state["tokens"].get(token_id)
+    if not token or amount is None:
+        return None
+    left = int(amount)
+    if left < 0:
+        return await heal(token_id, -left)
+    for pool_name in RULES.damage_order:
+        if left <= 0:
+            break
+        block = token["pools"].get(pool_name)
+        pool = RULES.pools_by_name.get(pool_name)
+        if block is None or pool is None:
+            continue
+        if pool.floor is None:
+            # Nothing stops this pool absorbing the rest: Ico's core hit
+            # points run past zero and the limit is not the server's to
+            # know.
+            available = left
+        else:
+            available = max(0, block["current"] - pool.floor)
+        taken = min(left, available)
+        block["current"] = pool.clamp(block["current"] - taken, block["max"])
+        left -= taken
+    await _save()
+    return token
+
+
+async def heal(token_id: str, amount: int):
+    """Healing runs the damage order backwards, so the pool that took
+    the damage last is the one that comes back first."""
+    token = _state["tokens"].get(token_id)
+    if not token or amount is None:
+        return None
+    left = int(amount)
+    for pool_name in reversed(RULES.damage_order):
+        if left <= 0:
+            break
+        block = token["pools"].get(pool_name)
+        pool = RULES.pools_by_name.get(pool_name)
+        if block is None or pool is None:
+            continue
+        room = block["max"] - block["current"] if pool.caps_at_max else left
+        given = min(left, max(0, room))
+        block["current"] = pool.clamp(block["current"] + given, block["max"])
+        left -= given
+    await _save()
+    return token
+
+
+def is_down(token) -> bool:
+    """Whether a creature is out of the fight, by the ruleset's own
+    threshold rather than by hit points reaching zero."""
+    return RULES.is_down(token)
 
 
 async def advance_turn():

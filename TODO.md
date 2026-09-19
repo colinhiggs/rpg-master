@@ -67,21 +67,25 @@ looks like when it arrives.*
 
 ## The rules engine
 
-- **The server reads a ruleset's values but implements no ruleset's
-  logic.** The values half landed — `ruleset.py` binds every game
-  number the server uses to a mechanic in a compiled ruleset, and
-  `data.py` carries none of its own; see DONE.md. What is left is
-  everything above rung 0 in the ladder `../notes.md` sets out, and the
-  rung that blocks the rest is **state shape**. A token has one `hp`.
-  Ico has core and mastery hit points with `damage_depletes_mastery_first`,
-  plus stamina and spirit as separate power sources keyed off
-  attributes a token does not have. Until a token can hold that, no
-  formula matters, and the binding says so out loud: running the server
-  against `ico` refuses to start and names `starting_hp` and
-  `healing_caps_at_max` as the two things Ico cannot answer, both of
-  them the same underlying fact.
+- **The server holds a ruleset's shape but computes none of its
+  numbers.** Values and state shape both landed — every game number is
+  bound to a mechanic, and a creature carries one pool per track its
+  ruleset declares, four for Ico against demo's one. See DONE.md for
+  both. What is left is rungs 2 and up in `../notes.md`'s ladder, and
+  the boundary is sharp: the server *executes* sequences the book
+  states, such as the damage order, and *computes* nothing.
 
-  Beyond that rung, `../notes.md` recommends a ruleset shipping a Python
+  What that costs today is that every Ico pool's maximum is typed in by
+  hand. Core hit points equal constitution, stamina and spirit are
+  based on attributes, mastery is bought — and a token has no
+  attributes, so the table supplies all four. That is a defensible
+  place for a virtual tabletop to stop, and it is also the next rung:
+  a token that held a character would have those computed. Whether it
+  should is a real question and not a foregone one, because a VTT whose
+  tokens are characters is a different product from one whose tokens
+  are markers the humans annotate.
+
+  Beyond that, `../notes.md` recommends a ruleset shipping a Python
   module behind a small interface rather than a DSL, with `sim/model.py`
   as the module that already exists. Two things about that have moved
   since it was written and want checking before it is committed to:
@@ -199,14 +203,17 @@ looks like when it arrives.*
   can reseat a returning player, but nothing does the reseating
   automatically. Matching by name on `join` is the small version and is
   probably enough.
-- **Nothing tests the server.** `tools/test_rules.py` is the toolset's,
-  and it does not know this server exists. The event contract is
-  exactly the sort of thing that is cheap to test and currently is not:
-  who may move what, that a player cannot move somebody else's token,
-  that HP clamps at both ends, that removing the token whose turn it is
-  leaves `currentTurn` somewhere sane. The rules side of this project
-  gets a lot of its confidence from a test suite that exercises the
-  real ruleset; this side has none at all.
+- **The event contract is untested.** `test_server.py` exists now and
+  has 76 tests in it, but they are all about the rules seam: that the
+  binding is current, that a pool clamps where its ruleset says, that
+  damage walks the declared order. Not one of them goes through
+  `server.py`. What is still uncovered is the part that decides who may
+  do what — that a player cannot move somebody else's token, that a
+  non-DM cannot spawn or advance the turn, that removing the token
+  whose turn it is leaves `currentTurn` somewhere sane, that a handler
+  given rubbish returns rather than raising. Every one of those is a
+  handful of lines against the functions in `server.py`, and the file
+  to put them in is already there.
 
 ## The client
 
