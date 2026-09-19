@@ -55,6 +55,32 @@ class From:
         return f"From({self.rule_id}.{self.key})"
 
 
+class Attribute:
+    """A value that equals one of the creature's attributes, where the
+    RULESET says which one.
+
+    `hit-points.core_hp_equals` is the string "constitution", so core
+    hit points are not bound to constitution here - they are bound to
+    whatever that mechanic names, and the server looks the attribute up
+    on the creature. Rename the attribute in the book and this follows;
+    name one that does not exist and binding refuses to start, which is
+    how `power-sources.spirit_base` was found saying "will" when the
+    six attributes are strength, dexterity, constitution, intelligence,
+    willpower and charisma.
+
+    This is the whole of the formula language, deliberately. notes.md's
+    case against a DSL is that a language powerful enough to express a
+    real ruleset is a programming language, and you end up writing an
+    interpreter and a debugger for an audience of one. An indirection
+    through a name the book already states is not that."""
+
+    def __init__(self, names):
+        self.names = names          # a From, whose value is an attribute name
+
+    def __repr__(self):
+        return f"Attribute({self.names!r})"
+
+
 class Need:
     """One single value the server needs, in the server's vocabulary."""
 
@@ -102,13 +128,21 @@ class Pool:
     down_at      set on exactly one pool per ruleset: at or below this,
                  the creature is out of the fight. It is not always the
                  same as `floor` - in Ico the floor is open and this is
-                 death's door."""
+                 death's door.
+    derives      an Attribute, when the book says what this pool's
+                 maximum equals. A derived maximum is computed from the
+                 creature rather than typed in, and recomputed when the
+                 attribute it depends on changes. The table can still
+                 override it - see BoundPool.max_for - because a pool
+                 the rules let a character widen has a maximum the
+                 formula is only the base of."""
 
     def __init__(self, name, label, starts=None, floor=None,
-                 caps_at_max=True, down_at=None):
+                 caps_at_max=True, down_at=None, derives=None):
         self.name = name
         self.label = label
         self.starts = starts
+        self.derives = derives
         self.floor = floor
         self.caps_at_max = caps_at_max
         self.down_at = down_at
@@ -126,6 +160,10 @@ BINDINGS = {
             "max_dice_per_roll": ("dice-rolls", "max_dice_per_roll"),
             "max_sides": ("dice-rolls", "max_sides"),
         },
+        # demo has no attributes, so nothing in it can derive from one.
+        # Its pool keeps the flat starting value the book states, and
+        # the derivation machinery below simply never fires.
+        "attributes": (),
         "pools": (
             Pool("hp", "Hit points",
                  starts=From("damage-and-healing", "starting_hp"),
@@ -146,12 +184,21 @@ BINDINGS = {
     #                  out of. They are conditions of a creature in
     #                  exactly the way hit points are, so they are pools.
     #
-    # None of the four states a starting maximum, because all four
-    # derive from a character: core hit points equal constitution,
-    # stamina is based on constitution and spirit on will, and mastery
-    # is bought. A token has no attributes, so the table supplies these
-    # per token - which is honest for a virtual tabletop, and is the
-    # line where rung 1 stops and rung 2 begins.
+    # Three of the four maxima are now DERIVED, from attributes the
+    # token carries and mechanics that name which attribute:
+    #
+    #   core      equals constitution outright - hit-points.md says so
+    #             in as many words and nothing widens it.
+    #   stamina   BASED ON constitution, and spirit on willpower. The
+    #             word in the book is "base": advancement widens both,
+    #             so the derived figure is the floor of a character's
+    #             real maximum rather than the whole of it. A table that
+    #             has spent points overrides it, and the override sticks.
+    #
+    # mastery derives from nothing, and that is the book being clear
+    # rather than the binding being lazy: mastery hit points are BOUGHT
+    # as a character is built and advanced. There is no attribute to
+    # read, so the table types it, which is what typing it in is for.
     #
     # core's floor is deliberately open. `dying.deaths_door_at_core` is
     # 0 and that is where a character goes down, but they keep going
@@ -169,12 +216,17 @@ BINDINGS = {
         "scalars": {
             "default_roll": ("core-resolution", "standard_die"),
         },
+        "attributes": (From("attributes", "physical"),
+                       From("attributes", "mental")),
         "pools": (
             Pool("mastery", "Mastery", floor=0),
             Pool("core", "Core", floor=None,
+                 derives=Attribute(From("hit-points", "core_hp_equals")),
                  down_at=From("dying", "deaths_door_at_core")),
-            Pool("stamina", "Stamina", floor=0),
-            Pool("spirit", "Spirit", floor=0),
+            Pool("stamina", "Stamina", floor=0,
+                 derives=Attribute(From("power-sources", "stamina_base"))),
+            Pool("spirit", "Spirit", floor=0,
+                 derives=Attribute(From("power-sources", "spirit_base"))),
         ),
         "damage_order": From("hit-points", "damage_order"),
     },
@@ -188,17 +240,26 @@ class RulesetUnplayable(Exception):
 class BoundPool:
     """A Pool with everything resolved against the ruleset."""
 
-    def __init__(self, name, label, starts, floor, caps_at_max, down_at):
+    def __init__(self, name, label, starts, floor, caps_at_max, down_at,
+                 derives_from=None):
         self.name = name
         self.label = label
         self.starts = starts
         self.floor = floor
         self.caps_at_max = caps_at_max
         self.down_at = down_at
+        self.derives_from = derives_from    # an attribute name, or None
 
     @property
     def supplied_by_table(self):
-        return self.starts is None
+        return self.starts is None and self.derives_from is None
+
+    def max_for(self, attributes):
+        """This pool's maximum for a creature with these attributes, or
+        None if nothing but the table can say."""
+        if self.derives_from is not None:
+            return int((attributes or {}).get(self.derives_from, 0))
+        return self.starts
 
     def as_json(self):
         """What the client needs to draw and edit this pool."""
@@ -209,6 +270,7 @@ class BoundPool:
             "floor": self.floor,
             "capsAtMax": self.caps_at_max,
             "downAt": self.down_at,
+            "derivesFrom": self.derives_from,
         }
 
     def clamp(self, value, maximum):
@@ -223,7 +285,8 @@ class Ruleset:
     """The bound ruleset: every need and every pool resolved, with the
     provenance kept so that startup can say where each came from."""
 
-    def __init__(self, mechanics, values, sources, pools, damage_order):
+    def __init__(self, mechanics, values, sources, pools, damage_order,
+                 attributes=()):
         self.mechanics = mechanics
         self.name = mechanics.name
         self.version = mechanics.version
@@ -232,6 +295,7 @@ class Ruleset:
         self.pools = pools
         self.pools_by_name = {p.name: p for p in pools}
         self.damage_order = damage_order
+        self.attributes = attributes
 
     def __getattr__(self, item):
         try:
@@ -250,23 +314,62 @@ class Ruleset:
                 return pool
         return None
 
-    def fresh_pools(self, supplied=None):
+    def fresh_attributes(self, supplied=None):
+        """The `attributes` block for a newly made token. Nothing derives
+        an attribute — they are the character, and everything else hangs
+        off them — so these are the table's to supply, always."""
+        supplied = supplied or {}
+        out = {}
+        for name in self.attributes:
+            try:
+                out[name] = int(supplied.get(name, 0))
+            except (TypeError, ValueError):
+                out[name] = 0
+        return out
+
+    def fresh_pools(self, supplied=None, attributes=None):
         """The `pools` block for a newly made token.
 
-        `supplied` is whatever the table typed in, by pool name. A pool
-        the ruleset gives a starting maximum for uses that unless the
-        table overrode it; one it does not gets what the table typed, or
-        zero, which reads as a token nobody has filled in yet."""
+        Three ways a maximum can arrive, in order of precedence: the
+        table typed one, the book derives one from an attribute, or the
+        book states a flat one. A block records which happened, because
+        a derived maximum has to follow its attribute and an overridden
+        one has to stop following it."""
         supplied = supplied or {}
         out = {}
         for pool in self.pools:
-            maximum = supplied.get(pool.name, pool.starts)
+            if pool.name in supplied and supplied[pool.name] not in (None, ""):
+                maximum, derived = supplied[pool.name], False
+            else:
+                maximum, derived = pool.max_for(attributes), \
+                                   pool.derives_from is not None
             try:
                 maximum = int(maximum)
             except (TypeError, ValueError):
-                maximum = 0
-            out[pool.name] = {"current": maximum, "max": maximum}
+                maximum, derived = 0, False
+            out[pool.name] = {"current": maximum, "max": maximum,
+                              "derived": derived}
         return out
+
+    def recompute_pools(self, token) -> bool:
+        """Bring a token's derived maxima back in line with its
+        attributes. Called when an attribute moves; a pool the table has
+        overridden is left alone, which is the point of recording that
+        it was overridden."""
+        changed = False
+        attributes = token.get("attributes") or {}
+        for pool in self.pools:
+            if pool.derives_from is None:
+                continue
+            block = (token.get("pools") or {}).get(pool.name)
+            if block is None or not block.get("derived"):
+                continue
+            maximum = pool.max_for(attributes)
+            if maximum != block["max"]:
+                block["max"] = maximum
+                block["current"] = pool.clamp(block["current"], maximum)
+                changed = True
+        return changed
 
     def is_down(self, token) -> bool:
         pool = self.vital_pool
@@ -283,6 +386,7 @@ class Ruleset:
         return {
             "name": self.name,
             "version": self.version,
+            "attributes": list(self.attributes),
             "pools": [p.as_json() for p in self.pools],
             "damageOrder": list(self.damage_order),
             "gridSize": self.values["grid_size"],
@@ -297,10 +401,15 @@ class Ruleset:
                 f"  {need.name:<20} {self.values[need.name]!r:<28} "
                 f"{self.sources[need.name]}"
             )
+        lines.append("  attributes: " + (", ".join(self.attributes) or "none"))
         lines.append(f"  pools, in damage order: {', '.join(self.damage_order)}")
         for pool in self.pools:
-            starts = ("the table supplies it" if pool.supplied_by_table
-                      else f"starts at {pool.starts}")
+            if pool.derives_from is not None:
+                starts = f"equals {pool.derives_from}"
+            elif pool.starts is not None:
+                starts = f"starts at {pool.starts}"
+            else:
+                starts = "the table supplies it"
             floor = "no floor" if pool.floor is None else f"floor {pool.floor}"
             down = "" if pool.down_at is None else f", down at {pool.down_at}"
             lines.append(f"    {pool.name:<16} {starts}, {floor}{down}")
@@ -362,8 +471,40 @@ def bind(name=None, path=None) -> Ruleset:
             "These are rules questions, so the server will not invent them."
         )
 
-    pools = tuple(
-        BoundPool(
+    # The attributes a creature in this game has. The names come out of
+    # the ruleset, so a game that calls them something else, or has none
+    # at all, needs nothing here.
+    attributes = []
+    for source in binding.get("attributes", ()):
+        names = _resolve(source, mechanics, "the attribute list")
+        if isinstance(names, str):
+            names = [names]
+        for attr in names:
+            if attr not in attributes:
+                attributes.append(attr)
+    attributes = tuple(attributes)
+
+    pools = []
+    for p in binding["pools"]:
+        derives_from = None
+        if p.derives is not None:
+            derives_from = _resolve(p.derives.names, mechanics,
+                                    f"pool '{p.name}' derivation")
+            # The check that matters. A mechanic naming an attribute the
+            # ruleset has not got is a dangling reference, and prose
+            # hides it: "a character's will" reads as English whatever
+            # the attribute list says. This is what caught
+            # power-sources.spirit_base saying 'will'.
+            if derives_from not in attributes:
+                raise RulesetUnplayable(
+                    f"ruleset '{name}' says pool '{p.name}' equals "
+                    f"'{derives_from}' ({p.derives.names.rule_id}."
+                    f"{p.derives.names.key}), and '{derives_from}' is not one "
+                    f"of its attributes ({', '.join(attributes) or 'it has none'}). "
+                    "Either the ruleset means an attribute it does not have, "
+                    "or the binding is reading the wrong mechanic."
+                )
+        pools.append(BoundPool(
             name=p.name,
             label=p.label,
             starts=_resolve(p.starts, mechanics, f"pool '{p.name}' starting max"),
@@ -371,9 +512,9 @@ def bind(name=None, path=None) -> Ruleset:
             caps_at_max=bool(_resolve(p.caps_at_max, mechanics,
                                       f"pool '{p.name}' cap")),
             down_at=_resolve(p.down_at, mechanics, f"pool '{p.name}' down_at"),
-        )
-        for p in binding["pools"]
-    )
+            derives_from=derives_from,
+        ))
+    pools = tuple(pools)
     if not pools:
         raise RulesetUnplayable(
             f"the '{name}' binding declares no pools, so a creature in it "
@@ -397,4 +538,4 @@ def bind(name=None, path=None) -> Ruleset:
             f"(it declares: {', '.join(sorted(known))}). Either the ruleset "
             "renamed a pool or the binding never had it."
         )
-    return Ruleset(mechanics, values, sources, pools, order)
+    return Ruleset(mechanics, values, sources, pools, order, attributes)

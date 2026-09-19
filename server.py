@@ -54,7 +54,7 @@ async def join(sid, payload):
     # them, because every one derives from a character sheet the server
     # does not hold. Absent, they come up as zero for filling in later.
     await data.add_player(sid, payload.get("name"), payload.get("role"),
-                          payload.get("pools"))
+                          payload.get("pools"), payload.get("attributes"))
     player = data.get_player(sid)
     await sio.emit("joined", {"selfId": sid, "tokenId": player["tokenId"]}, to=sid)
     await broadcast_state()
@@ -80,6 +80,7 @@ async def spawnToken(sid, payload):
     await data.spawn_token(
         payload.get("name"), payload.get("color"), payload.get("pools"),
         payload.get("x"), payload.get("y"), payload.get("kind", "goblin"),
+        payload.get("attributes"),
     )
     await broadcast_state()
 
@@ -117,11 +118,32 @@ async def setPoolMax(sid, payload):
     token = data.get_token(payload.get("tokenId"))
     if not _may_edit(sid, token):
         return
+    raw = payload.get("value")
+    if raw is None or raw == "":
+        value = None            # hand it back to the book's derivation
+    else:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return
+    await data.set_pool_max(token["id"], payload.get("pool"), value)
+    await broadcast_state()
+
+
+@sio.event
+async def setAttribute(sid, payload):
+    """Set one of a creature's attributes. Every pool the ruleset
+    derives from it moves with it, unless the table has overridden that
+    pool."""
+    payload = payload or {}
+    token = data.get_token(payload.get("tokenId"))
+    if not _may_edit(sid, token):
+        return
     try:
         value = int(payload.get("value"))
     except (TypeError, ValueError):
         return
-    await data.set_pool_max(token["id"], payload.get("pool"), value)
+    await data.set_attribute(token["id"], payload.get("attr"), value)
     await broadcast_state()
 
 

@@ -67,38 +67,50 @@ looks like when it arrives.*
 
 ## The rules engine
 
-- **The server holds a ruleset's shape but computes none of its
-  numbers.** Values and state shape both landed — every game number is
-  bound to a mechanic, and a creature carries one pool per track its
-  ruleset declares, four for Ico against demo's one. See DONE.md for
-  both. What is left is rungs 2 and up in `../notes.md`'s ladder, and
-  the boundary is sharp: the server *executes* sequences the book
-  states, such as the damage order, and *computes* nothing.
+- **The server computes what one attribute answers, and nothing
+  harder.** Values, state shape and formulas have all landed — see
+  DONE.md for each. What the formula mechanism does is resolve a
+  mechanic whose value is an attribute name and look that attribute up,
+  which covers every derivation Ico states that way: core hit points,
+  and the two power source bases. It covers nothing else, and the
+  arithmetic in `../notes.md`'s rung-2 example — `weapon + margin/2 +
+  skill/8` — is not expressible in it and is not meant to be.
 
-  What that costs today is that every Ico pool's maximum is typed in by
-  hand. Core hit points equal constitution, stamina and spirit are
-  based on attributes, mastery is bought — and a token has no
-  attributes, so the table supplies all four. That is a defensible
-  place for a virtual tabletop to stop, and it is also the next rung:
-  a token that held a character would have those computed. Whether it
-  should is a real question and not a foregone one, because a VTT whose
-  tokens are characters is a different product from one whose tokens
-  are markers the humans annotate.
-
-  Beyond that, `../notes.md` recommends a ruleset shipping a Python
-  module behind a small interface rather than a DSL, with `sim/model.py`
-  as the module that already exists. Two things about that have moved
-  since it was written and want checking before it is committed to:
-  `model.py` is 5,076 lines now rather than the ~600 it was costed at,
-  and it is shaped for a simulator — its `ASSUMPTIONS` list has both
-  sides fighting to the death on open featureless ground, which is not
-  a table. Either the server inherits those assumptions or they come
-  out of the model first, and that is work `notes.md` costed at zero.
+  So the rung is half climbed, honestly. The half that is left is
+  resolution: an attack, a damage roll, a saving throw. That is where
+  `../notes.md`'s recommendation actually bites — a ruleset shipping a
+  Python module behind a small interface rather than a DSL, with
+  `sim/model.py` as the module that already exists. Two things about
+  that have moved since it was written and want checking before it is
+  committed to: `model.py` is 5,076 lines now rather than the ~600 it
+  was costed at, and it is shaped for a simulator — its `ASSUMPTIONS`
+  list has both sides fighting to the death on open featureless ground,
+  which is not a table. Either the server inherits those assumptions or
+  they come out of the model first, and that is work `notes.md` costed
+  at zero.
 
   Whatever consumes it, the ownership boundary comes with it: a
   mechanic value is measured against the whole system in
   `rules/ico/sim/`, so this server reads those numbers and never
   restates one.
+- **The bestiary is sitting right there and nothing reads it.**
+  `mechanics.json` carries five creatures — gnoll, goblin, hill giant,
+  hobgoblin, orc — each with attributes, skills, disciplines, a weapon,
+  armour and its pools stated outright. Spawning a goblin means typing
+  six attributes and a mastery total that the book already knows. The
+  server could offer the list and fill the token in.
+
+  One thing to settle first, because it is a question about the rules
+  and not about the server. A creature's stat block states its pools
+  *directly* rather than deriving them, and for the goblin they do not
+  agree: `constitution` is `8` and `core_hit_points` is `8`, which
+  matches, but `stamina` is `5` where `stamina_base` would make it `8`,
+  and `spirit` is `0` against a willpower of `8`. Spirit `0` is
+  obviously deliberate — a goblin has magical and spiritual
+  disciplines outlawed, so it never spends spirit. Stamina `5` is not
+  obviously anything, and until somebody says whether it is a
+  considered number or a slip, a server that seeded from the block
+  would be propagating it either way.
 - **Dice notation is `XdY+Z` and nothing else.** No advantage or
   disadvantage, no exploding dice, no pools. This is deliberately
   downstream of the entry above rather than a gap in its own right:

@@ -55,7 +55,7 @@ _state = {
     # a ruleset you might since have changed is worse than none.
     "ruleset": RULES.as_json(),
     "players": {},   # sid -> { id, name, role, tokenId }  — NOT persisted, see load()
-    "tokens": {},    # tokenId -> { id, name, x, y, color, kind, pools, ownerId, isNpc }
+    "tokens": {},    # tokenId -> { id, name, x, y, color, kind, attributes, pools, ownerId, isNpc }
     "turnOrder": [],
     "currentTurn": -1,
     "log": [],
@@ -78,6 +78,8 @@ def _migrate_token(token: dict) -> dict:
     other pool starts empty for the table to fill in. Switching ruleset
     between runs makes the old numbers meaningless anyway, which is why
     this is a courtesy rather than a migration worth versioning."""
+    if "attributes" not in token:
+        token["attributes"] = RULES.fresh_attributes()
     if "pools" in token:
         return token
     old = token.pop("maxHp", None)
@@ -206,7 +208,8 @@ def roll_dice(notation: str):
 # auth/validation (is this sid allowed to do this?); this module's job
 # is applying the change once it's been allowed.
 # ---------------------------------------------------------------------
-async def add_player(sid: str, name: str, role: str, pools=None):
+async def add_player(sid: str, name: str, role: str, pools=None,
+                     attributes=None):
     name = str(name or "Adventurer")[:24]
     role = "dm" if role == "dm" else "player"
 
@@ -221,7 +224,8 @@ async def add_player(sid: str, name: str, role: str, pools=None):
             "y": _clamp_to_grid(_state["gridSize"] / 2 + (random.random() * 4 - 2)),
             "color": colors[len(_state["players"]) % len(colors)],
             "kind": "hero",
-            "pools": RULES.fresh_pools(pools),
+            "attributes": RULES.fresh_attributes(attributes),
+            "pools": RULES.fresh_pools(pools, attributes),
             "ownerId": sid,
             "isNpc": False,
         }
@@ -252,7 +256,8 @@ async def move_token(token_id: str, x: float, y: float):
     return token
 
 
-async def spawn_token(name: str, color: str, pools, x, y, kind: str = "goblin"):
+async def spawn_token(name: str, color: str, pools, x, y, kind: str = "goblin",
+                      attributes=None):
     token_id = _next_token_id_str()
     if kind not in MODEL_KINDS:
         kind = "goblin"
@@ -263,7 +268,8 @@ async def spawn_token(name: str, color: str, pools, x, y, kind: str = "goblin"):
         "y": _clamp_to_grid(y if y is not None else _state["gridSize"] / 2),
         "color": color or "#999999",
         "kind": kind,
-        "pools": RULES.fresh_pools(pools),
+        "attributes": RULES.fresh_attributes(attributes),
+        "pools": RULES.fresh_pools(pools, attributes),
         "ownerId": None,
         "isNpc": True,
     }
@@ -299,10 +305,14 @@ async def set_pool(token_id: str, pool_name: str, value: int):
     return token
 
 
-async def set_pool_max(token_id: str, pool_name: str, value: int):
-    """Set one pool's maximum — the table filling in a character whose
-    numbers the ruleset cannot state. The current value follows it down
-    so a token cannot sit above a maximum it just lost."""
+async def set_pool_max(token_id: str, pool_name: str, value):
+    """Set one pool's maximum, or hand it back to the book.
+
+    A maximum the ruleset derives follows its attribute until somebody
+    overrides it here, and then it stops — which is right, because the
+    pools Ico derives are stated as a *base* that advancement widens,
+    so a character who has spent points has a maximum the formula is
+    only the floor of. `value` of None reverts to the derived figure."""
     token = _state["tokens"].get(token_id)
     pool = RULES.pools_by_name.get(pool_name)
     if not token or pool is None:
@@ -310,8 +320,32 @@ async def set_pool_max(token_id: str, pool_name: str, value: int):
     block = token["pools"].get(pool_name)
     if block is None:
         return None
-    block["max"] = max(0, int(value))
+    if value is None:
+        if pool.derives_from is None:
+            return None
+        block["derived"] = True
+        block["max"] = pool.max_for(token.get("attributes"))
+    else:
+        block["max"] = max(0, int(value))
+        block["derived"] = False
     block["current"] = pool.clamp(block["current"], block["max"])
+    await _save()
+    return token
+
+
+async def set_attribute(token_id: str, attr: str, value: int):
+    """Set one attribute, and move whatever hangs off it.
+
+    This is the rung the server just climbed: a number the table used to
+    type into four boxes is typed into one, and the pools the book
+    derives from it follow. A pool somebody has overridden does not,
+    deliberately."""
+    token = _state["tokens"].get(token_id)
+    if not token or attr not in RULES.attributes:
+        return None
+    token.setdefault("attributes", RULES.fresh_attributes())
+    token["attributes"][attr] = int(value)
+    RULES.recompute_pools(token)
     await _save()
     return token
 
