@@ -21,10 +21,20 @@ from pathlib import Path
 
 import aiosqlite
 
-GRID_SIZE = 14
+import ruleset
+
+# Every game number below comes from the compiled ruleset, and binding
+# happens at import so that a missing one is a startup crash naming the
+# mechanic rather than a game that quietly contradicts its own book.
+# ruleset.py says which mechanic answers which need, and which of these
+# the book has no opinion about. Nothing in this file may hardcode a
+# value RULES could supply — that is the second source of truth the
+# whole pipeline exists to prevent.
+RULES = ruleset.bind()
+
 DB_PATH = Path(__file__).parent / "game.db"
 
-DICE_RE = re.compile(r"^(\d*)d(\d+)([+-]\d+)?$", re.IGNORECASE)
+DICE_RE = re.compile(RULES.dice_notation, re.IGNORECASE)
 
 # Which 3D model a token renders as on the client. Kept as a small
 # fixed set (rather than a free-text field) so a bad/typo'd value from
@@ -37,7 +47,7 @@ MODEL_KINDS = ("hero", "goblin", "ogre")
 # Persistence below exists to survive restarts, not to replace this.
 # ---------------------------------------------------------------------
 _state = {
-    "gridSize": GRID_SIZE,
+    "gridSize": RULES.grid_size,
     "players": {},   # sid -> { id, name, role, tokenId }  — NOT persisted, see load()
     "tokens": {},    # tokenId -> { id, name, x, y, color, hp, maxHp, ownerId, isNpc }
     "turnOrder": [],
@@ -84,7 +94,7 @@ async def load():
             row = await cur.fetchone()
     if row:
         saved = json.loads(row[0])
-        _state["gridSize"] = saved.get("gridSize", GRID_SIZE)
+        _state["gridSize"] = saved.get("gridSize", RULES.grid_size)
         _state["tokens"] = saved.get("tokens", {})
         _state["turnOrder"] = saved.get("turnOrder", [])
         _state["currentTurn"] = saved.get("currentTurn", -1)
@@ -154,7 +164,8 @@ def roll_dice(notation: str):
     count = int(m.group(1)) if m.group(1) else 1
     sides = int(m.group(2))
     mod = int(m.group(3)) if m.group(3) else 0
-    if not (1 <= count <= 100) or not (2 <= sides <= 1000):
+    if not (1 <= count <= RULES.max_dice_per_roll) or not (
+            2 <= sides <= RULES.max_sides):
         return None
     rolls = [random.randint(1, sides) for _ in range(count)]
     total = sum(rolls) + mod
@@ -182,8 +193,8 @@ async def add_player(sid: str, name: str, role: str):
             "y": _clamp_to_grid(_state["gridSize"] / 2 + (random.random() * 4 - 2)),
             "color": colors[len(_state["players"]) % len(colors)],
             "kind": "hero",
-            "hp": 20,
-            "maxHp": 20,
+            "hp": RULES.starting_hp,
+            "maxHp": RULES.starting_hp,
             "ownerId": sid,
             "isNpc": False,
         }
@@ -253,7 +264,11 @@ async def set_hp(token_id: str, hp: int):
     token = _state["tokens"].get(token_id)
     if not token:
         return None
-    token["hp"] = max(0, min(token["maxHp"], hp))
+    # Whether healing may overshoot is the ruleset's call, not this
+    # function's; min_hp likewise, which is 0 in demo and death's door
+    # in a ruleset that has one.
+    ceiling = token["maxHp"] if RULES.healing_caps_at_max else hp
+    token["hp"] = max(RULES.min_hp, min(ceiling, hp))
     await _save()
     return token
 

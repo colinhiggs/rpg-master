@@ -67,20 +67,34 @@ looks like when it arrives.*
 
 ## The rules engine
 
-- **The server knows about no ruleset at all.** "The game" is a
-  position, a hit point total and a generic dice roller. Turning a
-  ruleset into `data.py` functions the way `roll_dice` and `set_hp`
-  already are — validated in `server.py`, applied and persisted in
-  `data.py` — is the largest single piece of work on this list, and
-  most of the rest of this file is easier once it is decided. What the
-  server would read is a ruleset's two build outputs, `snippets.json`
-  and `mechanics.json`. There is already a worked pattern for carrying
-  those into a consumer without a submodule: the adventures project
-  commits its own stamped copy under `refs/rules-ico/`, and
-  [SHARING.md](SHARING.md) records why a pin was declined. The
-  ownership boundary comes with them — a mechanic value is measured
-  against the whole system in `rules/ico/sim/`, so this server reads
-  those numbers and never restates one.
+- **The server reads a ruleset's values but implements no ruleset's
+  logic.** The values half landed — `ruleset.py` binds every game
+  number the server uses to a mechanic in a compiled ruleset, and
+  `data.py` carries none of its own; see DONE.md. What is left is
+  everything above rung 0 in the ladder `../notes.md` sets out, and the
+  rung that blocks the rest is **state shape**. A token has one `hp`.
+  Ico has core and mastery hit points with `damage_depletes_mastery_first`,
+  plus stamina and spirit as separate power sources keyed off
+  attributes a token does not have. Until a token can hold that, no
+  formula matters, and the binding says so out loud: running the server
+  against `ico` refuses to start and names `starting_hp` and
+  `healing_caps_at_max` as the two things Ico cannot answer, both of
+  them the same underlying fact.
+
+  Beyond that rung, `../notes.md` recommends a ruleset shipping a Python
+  module behind a small interface rather than a DSL, with `sim/model.py`
+  as the module that already exists. Two things about that have moved
+  since it was written and want checking before it is committed to:
+  `model.py` is 5,076 lines now rather than the ~600 it was costed at,
+  and it is shaped for a simulator — its `ASSUMPTIONS` list has both
+  sides fighting to the death on open featureless ground, which is not
+  a table. Either the server inherits those assumptions or they come
+  out of the model first, and that is work `notes.md` costed at zero.
+
+  Whatever consumes it, the ownership boundary comes with it: a
+  mechanic value is measured against the whole system in
+  `rules/ico/sim/`, so this server reads those numbers and never
+  restates one.
 - **Dice notation is `XdY+Z` and nothing else.** No advantage or
   disadvantage, no exploding dice, no pools. This is deliberately
   downstream of the entry above rather than a gap in its own right:
