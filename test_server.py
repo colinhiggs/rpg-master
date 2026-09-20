@@ -485,6 +485,62 @@ async def _ico_state():
         check("and the sheet is gone",
               char["id"] not in data._state["characters"])
 
+        # Coming back. There is no authentication here, so the name is
+        # the identity — the same thing a table goes by out loud.
+        data._state["tokens"] = {}
+        data._state["turnOrder"] = []
+        data._state["players"] = {}
+        data._state["characters"] = {}
+        first = await data.add_player("sid-a", "Ashri", "player")
+        sheet = await data.create_character("Ashri the Bold", {
+            "strength": 16, "dexterity": 14, "constitution": 13,
+            "intelligence": 10, "willpower": 15, "charisma": 12})
+        await data.assign_character(first, sheet["id"])
+        await data.apply_damage(first, 5)
+        check("a player's token records who is playing it, durably",
+              data.get_token(first)["playerName"] == "Ashri")
+        check("and the sheet records who it was handed to",
+              sheet["lastPlayedBy"] == "Ashri")
+
+        await data.remove_player("sid-a")
+        order_before = list(data._state["turnOrder"])
+        again = await data.add_player("sid-b", "Ashri", "player")
+        check("a returning player picks up the same token",
+              again == first)
+        check("rather than appending a second one to the initiative",
+              data._state["turnOrder"] == order_before
+              and len(data._state["tokens"]) == 1)
+        check("their character comes back with it",
+              data.get_token(again)["characterId"] == sheet["id"])
+        check("and so does the wound they took last time",
+              sheet["pools"]["core"]["current"] == 8)
+        check("the new connection owns it",
+              data.get_token(again)["ownerId"] == "sid-b")
+
+        other = await data.add_player("sid-c", "Ashri", "player")
+        check("a second person on the same name gets their own token, "
+              "rather than shouldering the first out",
+              other != again and len(data._state["tokens"]) == 2)
+
+        await data.remove_player("sid-b")
+        await data.remove_token(again)
+        third = await data.add_player("sid-d", "Ashri", "player")
+        check("a sheet outlives the token it was on",
+              data.get_token(third)["characterId"] == sheet["id"])
+        check("and the new token takes the character's name",
+              data.get_token(third)["name"] == "Ashri the Bold")
+
+        before = len(data._state["tokens"])
+        await data.add_player("sid-e", "Bramm", "player")
+        check("somebody genuinely new still gets a new token",
+              len(data._state["tokens"]) == before + 1)
+        dm = await data.add_player("sid-f", "Sela", "dm")
+        check("and a DM gets no token at all, coming or going", dm is None)
+
+        arrivals = [l["text"] for l in data._state["log"]]
+        check("coming back says so once, not twice",
+              sum(1 for t in arrivals if "Ashri" in t and "joined as" in t) == 1)
+
 
 print("\nOne pool, end to end:")
 asyncio.run(_demo_state())
