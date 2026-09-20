@@ -202,6 +202,42 @@ describe how the server works now rather than how it got there.
   up attribute by attribute came out at nought of thirteen. Undamaged
   now stays undamaged. 132 server tests, up from 98.
 
+- **A returning player picks up what they were playing.** Two entries
+  on the board turned out to be one fix: a reconnecting player used to
+  get a brand new token, and nothing linked a player to their character
+  across sessions.
+
+  **Why the old answer could not work.** `ownerId` is a socket id. It
+  dies with the connection, so after a drop — or a restart, where
+  `players` is deliberately never restored — there was nothing left to
+  say whose a token had been. A token now carries a durable
+  `playerName`, and a character carries `lastPlayedBy` once a player's
+  token has been pointed at it.
+
+  **Three steps on join, in order.** A token going spare with this
+  player's name, picked up with whatever character and whatever wounds
+  were on it. Failing that, a character that remembers them — for when
+  the token was removed but the sheet outlived it, which is the whole
+  reason a character is stored apart from a token — and they get a new
+  token named after the character and linked to it. Failing that, a new
+  token, as before.
+
+  **A token somebody is currently connected as is never taken.** Two
+  people at one table typing the same name get one each, and the second
+  does not shoulder the first out of their own character.
+
+  The name is the identity, because the table has no authentication and
+  deliberately none yet: it is the same thing a table goes by out loud,
+  and it is a convenience rather than a claim about who anybody is.
+  Somebody who knows a name can pick up that character, which is the
+  same trust every other event on this server already assumes.
+
+  A side effect worth having: the initiative order stops growing. A
+  rejoining player used to append a second entry to it.
+
+  Verified through a full server restart, not just a reload: same
+  token, same sheet, same wound. 145 server tests, up from 132.
+
 ## The client
 
 *Nothing yet.*

@@ -88,6 +88,7 @@ def _migrate_token(token: dict) -> dict:
     between runs makes the old numbers meaningless anyway, which is why
     this is a courtesy rather than a migration worth versioning."""
     token.setdefault("characterId", None)
+    token.setdefault("playerName", None)
     if "attributes" not in token:
         token["attributes"] = RULES.fresh_attributes()
     if "pools" in token:
@@ -124,8 +125,9 @@ async def load():
     NOT restored — a socket id (sid) from a previous process can never
     reconnect, so an empty `players` map is the only state that makes
     sense for a fresh process. Tokens survive so the DM can resume the
-    board and have players rejoin their existing characters (matching
-    by name is a reasonable next step — not implemented here)."""
+    board and have players rejoin their existing characters — see
+    _reclaimable_token(), which is how a returning player finds what
+    they were playing once their old sid is meaningless."""
     global _state, _next_token_id, _next_character_id
     await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
@@ -183,6 +185,37 @@ def _next_character_id_str() -> str:
     cid = f"c{_next_character_id}"
     _next_character_id += 1
     return cid
+
+
+def _reclaimable_token(name: str):
+    """The token this player was last playing, if it is going spare.
+
+    `ownerId` is a socket id and dies with the connection, so it cannot
+    answer "whose was this" after a drop or a restart. `playerName` can,
+    and is what a table actually goes by — there is no authentication
+    here and deliberately none (see TODO.md), so the name is the
+    identity, exactly as it is when somebody says whose turn it is.
+
+    A token somebody is *currently* connected as is never taken: two
+    people at one table typing the same name get one token each, and
+    the second gets a new one rather than shouldering the first out of
+    their own character."""
+    for token in _state["tokens"].values():
+        if token.get("playerName") != name:
+            continue
+        if token.get("ownerId") in _state["players"]:
+            continue
+        return token
+    return None
+
+
+def _remembered_character(name: str):
+    """A character this player was last playing, for when the token it
+    was on has been removed but the sheet has not."""
+    for char in _state["characters"].values():
+        if char.get("lastPlayedBy") == name:
+            return char
+    return None
 
 
 def _sheet(token):
@@ -261,12 +294,27 @@ async def add_player(sid: str, name: str, role: str, pools=None,
     role = "dm" if role == "dm" else "player"
 
     token_id = None
+    returning = None
     if role == "player":
+        # Somebody coming back picks up what they were playing, rather
+        # than arriving as a stranger beside their own character. This
+        # also keeps the initiative order intact: a rejoining player
+        # used to append a second entry to it.
+        returning = _reclaimable_token(name)
+    arrival = None          # what to say about it, decided once below
+    if returning is not None:
+        returning["ownerId"] = sid
+        token_id = returning["id"]
+        sheet = _state["characters"].get(returning.get("characterId"))
+        arrival = (f"{name} is back, and picks up "
+                   f"{sheet['name'] if sheet else returning['name']} again.")
+    elif role == "player":
         token_id = _next_token_id_str()
         colors = ["#4f8ef7", "#f75f4f", "#4ff77e", "#f7d34f", "#c14ff7", "#4ff7e6"]
+        remembered = _remembered_character(name)
         _state["tokens"][token_id] = {
             "id": token_id,
-            "name": name,
+            "name": remembered["name"] if remembered else name,
             "x": _clamp_to_grid(_state["gridSize"] / 2 + (random.random() * 4 - 2)),
             "y": _clamp_to_grid(_state["gridSize"] / 2 + (random.random() * 4 - 2)),
             "color": colors[len(_state["players"]) % len(colors)],
@@ -274,13 +322,26 @@ async def add_player(sid: str, name: str, role: str, pools=None,
             "attributes": RULES.fresh_attributes(attributes),
             "pools": RULES.fresh_pools(pools, attributes),
             "characterId": None,
+            # Durable, unlike ownerId. This is what a returning player
+            # is matched on.
+            "playerName": name,
             "ownerId": sid,
             "isNpc": False,
         }
         _state["turnOrder"].append(token_id)
+        if remembered is not None:
+            # The token was removed but the sheet outlived it, which is
+            # the whole reason a character is stored apart from a token.
+            _state["tokens"][token_id].pop("pools", None)
+            _state["tokens"][token_id].pop("attributes", None)
+            _state["tokens"][token_id]["characterId"] = remembered["id"]
+            arrival = (f"{name} is back, and takes up "
+                       f"{remembered['name']} again.")
 
     _state["players"][sid] = {"id": sid, "name": name, "role": role, "tokenId": token_id}
-    _push_log("system", f"{name} joined as {'Dungeon Master' if role == 'dm' else 'a player'}.")
+    _push_log("system", arrival or (
+        f"{name} joined as "
+        f"{'Dungeon Master' if role == 'dm' else 'a player'}."))
     await _save()
     return token_id
 
@@ -289,7 +350,9 @@ async def remove_player(sid: str):
     player = _state["players"].pop(sid, None)
     if player:
         _push_log("system", f"{player['name']} disconnected.")
-        # Token is deliberately left in place — see load()'s docstring.
+        # Token is deliberately left in place — see load()'s docstring
+        # — and carries playerName, so the same person coming back
+        # picks it up again rather than arriving as a stranger.
         await _save()
     return player
 
@@ -473,6 +536,10 @@ async def assign_character(token_id: str, char_id):
     token["characterId"] = char_id
     token.pop("pools", None)
     token.pop("attributes", None)
+    # Remember whose it is, so the sheet can be found again even if this
+    # token is removed. A DM's monster leaves no such mark.
+    if token.get("playerName"):
+        _state["characters"][char_id]["lastPlayedBy"] = token["playerName"]
     _push_log("system", f"{token['name']} is now "
                         f"{_state['characters'][char_id]['name']}.")
     await _save()

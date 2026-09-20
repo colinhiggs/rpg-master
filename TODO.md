@@ -210,15 +210,17 @@ looks like when it arrives.*
   Fine for people who are in the room with you and not fine for
   anything else, which is the whole of the reason this has not been
   exposed further.
+
+  It costs slightly more than it used to. Now that a returning player
+  is matched on their name, somebody who knows a name can pick up that
+  character — the sheet, its wounds and its gear — rather than merely
+  joining as a stranger. That is the same trust every other event here
+  already assumes, and it is the thing that would have to be answered
+  first if this were ever exposed beyond the room.
 - **Everyone is sent everything.** No fog of war, no line of sight, no
   DM-only layer. The mechanism is per-`sid` emits rather than a
   broadcast, plus something on a token saying who may see it; the
   prerequisite is `snapshot()` becoming a projection, above.
-- **A reconnecting player gets a brand new token.** Tokens are
-  deliberately left on the board when their owner disconnects so the DM
-  can reseat a returning player, but nothing does the reseating
-  automatically. Matching by name on `join` is the small version and is
-  probably enough.
 - **The event contract is untested.** `test_server.py` exists now and
   has 76 tests in it, but they are all about the rules seam: that the
   binding is current, that a pool clamps where its ruleset says, that
@@ -246,11 +248,6 @@ looks like when it arrives.*
   order, and a power has a band it must be declared within. That is
   resolution-shaped work rather than budget-shaped, which is why it
   waits behind the same decision the rules-engine entry does.
-- **Nothing links a player to their character across sessions.** A
-  player joining gets a fresh token, and the DM points it at a sheet by
-  hand. That is the same gap as the reconnect entry below, and the same
-  fix would serve both: match a returning player to what they were
-  playing.
 
 ## The client
 

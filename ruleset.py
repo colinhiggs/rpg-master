@@ -519,6 +519,11 @@ class Ruleset:
             "disciplines": {},
             "powers": [],
             "notes": "",
+            # Set when a player's token is pointed at this sheet, so a
+            # returning player can be given it again. Not identity: the
+            # table has no authentication and this is a convenience, not
+            # a claim about who anybody is.
+            "lastPlayedBy": None,
         }
 
     def check_character(self, char):

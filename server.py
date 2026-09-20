@@ -219,7 +219,10 @@ async def createCharacter(sid, payload):
     player = data.get_player(sid)
     if not player:
         return
-    char = await data.create_character(payload.get("name"),
+    # A player writing themselves up gets a sheet named after them
+    # unless they said otherwise, which is both the likely intent and
+    # tidier in the log than "so-and-so is now New character".
+    char = await data.create_character(payload.get("name") or player["name"],
                                        payload.get("attributes"),
                                        payload.get("equipment"))
     if char is None:

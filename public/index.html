@@ -1089,7 +1089,8 @@ document.getElementById("charBtn").onclick = () => {
 document.getElementById("charCloseBtn").onclick = () =>
   document.getElementById("charScreen").classList.remove("open");
 document.getElementById("charNewBtn").onclick = () =>
-  socket.emit("createCharacter", { name: "New character" });
+  // No name: the server names a player's first sheet after them.
+  socket.emit("createCharacter", {});
 
 socket.on("characterCreated", (d) => {
   selectedCharId = d.id;

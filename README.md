@@ -215,6 +215,32 @@ Skills, disciplines and powers are stored and shown and checked by
 nobody. They are real systems with budgets of their own, and a server
 that half-enforced them would be worse than one that plainly does not.
 
+### Coming back
+
+A socket id dies with the connection, so it cannot answer "whose was
+this" after a drop or a restart. A player's token therefore carries a
+durable `playerName`, and a character carries `lastPlayedBy` once a
+player's token has been pointed at it. On `join`, in order:
+
+1. **A token going spare with this player's name** — they pick it up,
+   with whatever character and whatever wounds were on it. Nothing is
+   appended to the initiative order, which a rejoining player used to
+   do.
+2. **Failing that, a character that remembers them** — for when the
+   token was removed but the sheet outlived it, which is the whole
+   reason a character is stored apart from a token. They get a new
+   token, named after the character and linked to it.
+3. **Failing that, a new token**, as before.
+
+A token somebody is *currently* connected as is never taken, so two
+people at one table typing the same name get one each and the second
+does not shoulder the first out of their own character.
+
+The name is the identity because the table has no authentication —
+that is the same thing a table goes by out loud, and it is a
+convenience rather than a claim about who anybody is. See the auth
+entry in `TODO.md`.
+
 ### Three views
 
 One record, three sizes, none of which knows what an attribute or a
@@ -281,9 +307,8 @@ connection — a saved `sid` can never reconnect after a restart. So
 but always starts `players` empty; people just rejoin, and a fresh
 `sid` gets attached to them then. (Tokens deliberately aren't deleted
 when their owner disconnects, so a DM can reseat a returning player
-onto their existing character — matching a rejoining player back to
-their old token by name is a reasonable next step, not implemented
-here.)
+onto their existing character, and a returning player is now matched
+back to their own token automatically — see "Coming back" below.)
 
 ## Migrating to full relational later
 
@@ -376,6 +401,8 @@ be wrong within a week. What stays in this file is what the server *is*
 - Single room — one game per running server.
 - Character models are placeholder-quality (see
   `public/assets/README.md`) and only three shapes exist.
-- A dropped player's token stays on the board but isn't reclaimed on
-  rejoin; they'll get a brand-new token unless you extend `join` to
-  match by name (see [TODO.md](TODO.md)).
+- A returning player is matched on their **name**, because there is no
+  authentication here and deliberately none yet. Two people typing the
+  same name at one table get a token each, but somebody who knows a
+  name can pick up that character. Trust-based, like everything else on
+  this server.
